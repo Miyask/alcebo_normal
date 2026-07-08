@@ -18,9 +18,9 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageUploadRef = useRef<HTMLInputElement>(null);
   
-  // Editor HTML content state
   const [editorHtml, setEditorHtml] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; message: string }>({ type: 'idle', message: '' });
   
   // Selection/editing image states
   const [editingImageId, setEditingImageId] = useState<string | null>(null);
@@ -334,9 +334,11 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
   // Sincronizar de forma automática con la app de correo (local o vercel)
   const enviarAlSeguimiento = async (q: Quote) => {
     if (!clientEmailInput) {
-      console.log('No se proporcionó correo del cliente, omitiendo recordatorio.');
+      setSyncStatus({ type: 'error', message: 'No enviado: Falta el correo del cliente' });
       return;
     }
+    
+    setSyncStatus({ type: 'loading', message: 'Conectando con gestor de correos...' });
     
     // Auto-detectar servidor local o en la nube de Vercel (con tu subdominio activo)
     const trackerUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
@@ -359,11 +361,15 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
         })
       });
       if (response.ok) {
+        setSyncStatus({ type: 'success', message: 'Sincronizado con éxito' });
         console.log('✅ Presupuesto enviado correctamente al gestor de correos.');
       } else {
-        console.error('⚠️ Error al enviar:', await response.text());
+        const text = await response.text();
+        setSyncStatus({ type: 'error', message: `Error del servidor: ${text.substring(0, 30)}` });
+        console.error('⚠️ Error al enviar:', text);
       }
     } catch (err: any) {
+      setSyncStatus({ type: 'error', message: `Error de red: ${err.message}` });
       console.error('Error al enviar presupuesto al gestor de correos:', err.message);
     }
   };
@@ -482,9 +488,20 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
               <span className="material-symbols-outlined text-[#009fe3] text-2xl">description</span>
               Editor de Presupuestos de Word
             </h1>
-            <p className="text-[10px] text-slate-400 mt-0.5 font-bold uppercase tracking-wider">
-              Plantilla Oficial: Ppo-mail-2022.docx
-            </p>
+            <div className="flex flex-wrap items-center gap-2 mt-0.5">
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                Plantilla Oficial: Ppo-mail-2022.docx
+              </p>
+              {syncStatus.type !== 'idle' && (
+                <span className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase tracking-wide select-none ${
+                  syncStatus.type === 'loading' ? 'bg-sky-100 text-[#009FE3] animate-pulse' :
+                  syncStatus.type === 'success' ? 'bg-emerald-100 text-emerald-700' :
+                  'bg-rose-100 text-rose-700 border border-rose-200'
+                }`}>
+                  {syncStatus.type === 'loading' ? '⏳' : syncStatus.type === 'success' ? '✅' : '❌'} {syncStatus.message}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
