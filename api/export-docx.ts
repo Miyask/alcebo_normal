@@ -87,76 +87,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const zip = new PizZip(templateContent);
     let docXml = zip.file('word/document.xml').asText();
 
-    // 4. Modify XML text placeholders in word/document.xml
-    // Match 1: Reference code on cover page
-    docXml = docXml.replace('w:t>@@@@@@@@</w:t>', `w:t>${refCode}</w:t>`);
-    
-    // Match 2: Client name on cover page
-    docXml = docXml.replace('Com. Prop. @@@@@@@@', `Com. Prop. ${clientName}`);
-    
-    // Match 3: Client address on cover page
-    docXml = docXml.replace('C/ @@@@@@@@', `C/ ${clientAddress}`);
-    
-    // Match 4: Postal code on cover page
-    docXml = docXml.replace('28 @@@@   Madrid', `28${postalCode}   Madrid`);
-    
-    // Match 5: Attention name on cover page
-    docXml = docXml.replace('D. @@@@@@@@', `D. ${attName}`);
-    
-    // Match 6, 7, 8: Date on cover page (@@ of @@@@@ of 20@@)
-    docXml = docXml.replace('w:t>@@</w:t>', `w:t>${day}</w:t>`);
-    docXml = docXml.replace('w:t>@@@@@</w:t>', `w:t>${month}</w:t>`);
-    docXml = docXml.replace('w:t>@@</w:t>', `w:t>${year}</w:t>`);
-    
-    // Match 9: Client address in Section 5
-    docXml = docXml.replace('en C/ @@@@@@@@, en Madrid', `en C/ ${clientAddress}, en Madrid`);
-    
-    // Match 10: Bird count
-    docXml = docXml.replace('@@@@palomas', `${plaga} ${plaga.toLowerCase().includes('paloma') ? '' : 'palomas'}`);
-    
-    // Match 11: Affected areas
-    docXml = docXml.replace('@@@@@@@@ y @@@@@@@@', zonasAfectadas);
-    
-    // Match 12: Technical description
-    const lines = introTecnica.split('\n').filter(l => l.trim().length > 0);
-    let introXml = '';
-    if (lines.length > 0) {
-      introXml = lines.join('</w:t></w:r></w:p><w:p><w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr><w:t>');
-    } else {
-      introXml = 'se observó presencia activa de aves en la edificación';
-    }
-    docXml = docXml.replace('Durante la visita pudimos comprobar cómo @@@@@@@@.', `Durante la visita pudimos comprobar cómo ${introXml}.`);
-    
-    // Match 13: Main problem
-    docXml = docXml.replace('El problema principal @@@@@@@@', `El problema principal ${problemaPrincipal}`);
-    
-    // Match 14: Additional details
-    docXml = docXml.replace('Además, también pudimos comprobar que @@@@@@@@', `Además, también pudimos comprobar que ${detalleAdicional}`);
-    
-    // Match 15, 16, 17: Protection zones
-    docXml = docXml.replace('Protección de @@@@@@@@', `Protección de ${zona1}`);
-    docXml = docXml.replace('Protección de @@@@@@@@', `Protección de ${zona2}`);
-    docXml = docXml.replace('w:t>Protección de @@@@@@@@</w:t>', `w:t>Protección de ${zona3}</w:t>`);
-    
-    // Match 18: Telephone
-    docXml = docXml.replace('TlfMv @@@@@@@@', `TlfMv ${telefono}`);
-    
-    // Match 19: Postal code in Section 6
-    docXml = docXml.replace('280@@', `280${postalCodePrefix}`);
-    
-    // Match 20: Reference code in Section 6
-    docXml = docXml.replace('Ref-@@@@@@@@@@@', `Ref-${refCode}`);
-    
-    // Match 21, 22, 23: Prices
-    docXml = docXml.replace('................ @@@@@', `................ ${price1}`);
-    docXml = docXml.replace('........ @@@@@', `........ ${price2}`);
-    docXml = docXml.replace('w:t>@@@@</w:t>', `w:t>${price3}</w:t>`);
-    
-    // Match 24: Technical Commercial Name
-    docXml = docXml.replace('Técnico Comercial: @@@@@@@@@@@', `Técnico Comercial: ${tecnico}`);
-    
-    // Match 25: Client address in Section 6 header
-    docXml = docXml.replace('6.- PRESUPUESTO Y GARANTÍAS  C/ @@@@@@@@', `6.- PRESUPUESTO Y GARANTÍAS  C/ ${clientAddress}`);
+    // 4. Modify XML text placeholders in word/document.xml by index matching
+    let atIdx = 0;
+    docXml = docXml.replace(/<w:t[^>]*>([\s\S]*?)<\/w:t>/gi, (match, content) => {
+      if (content.includes('@@')) {
+        atIdx++;
+        switch (atIdx) {
+          case 1: return `<w:t>${refCode}</w:t>`;
+          case 2: return `<w:t>${clientName}</w:t>`;
+          case 3: return `<w:t>${clientAddress}</w:t>`;
+          case 4: return `<w:t>${postalCode}   Madrid</w:t>`;
+          case 5: return `<w:t>${attName}</w:t>`;
+          case 6: return `<w:t>${day}</w:t>`;
+          case 7: return `<w:t>${month}</w:t>`;
+          case 8: return `<w:t>${year}</w:t>`;
+          case 9: return `<w:t>${clientAddress}</w:t>`;
+          case 10: return `<w:t>${plaga}</w:t>`;
+          case 11: return `<w:t>${zonasAfectadas}</w:t>`;
+          case 12: {
+            // Multi-paragraph technical description
+            const lines = introTecnica.split('\n').filter((l: string) => l.trim().length > 0);
+            if (lines.length > 0) {
+              return lines.join('</w:t></w:r></w:p><w:p><w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr><w:t>');
+            }
+            return `<w:t>se observó presencia activa de aves en la edificación</w:t>`;
+          }
+          case 13: return `<w:t>El problema principal ${problemaPrincipal}</w:t>`;
+          case 14: return `<w:t>${detalleAdicional}</w:t>`;
+          case 15: return `<w:t>${zona1}</w:t>`;
+          case 16: return `<w:t>${zona2}</w:t>`;
+          case 17: return `<w:t>${zona3}</w:t>`;
+          case 18: return `<w:t>${telefono}</w:t>`;
+          case 19: return `<w:t>280${postalCodePrefix}</w:t>`;
+          case 20: return `<w:t>${refCode}</w:t>`;
+          case 21: return `<w:t>................ ${price1}</w:t>`;
+          case 22: return `<w:t>${price3}</w:t>`;
+          case 23: return `<w:t>........ ${price2}</w:t>`;
+          case 24: return `<w:t>${tecnico}</w:t>`;
+          case 25: return `<w:t>${clientAddress}</w:t>`;
+        }
+      }
+      return match;
+    });
 
     // 5. Overwrite/replace images in ZIP package
     if (images['img_template_2']) {

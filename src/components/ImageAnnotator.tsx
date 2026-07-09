@@ -297,7 +297,7 @@ export default function ImageAnnotator({ imageUrl, onSave, onClose }: ImageAnnot
   const handleSaveCanvas = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const dataUrl = canvas.toDataURL('image/png');
+    const dataUrl = canvas.toDataURL('image/jpeg', 1.0);
     onSave(dataUrl);
   };
 
