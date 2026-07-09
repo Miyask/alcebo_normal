@@ -404,6 +404,166 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
     enviarAlSeguimiento(updated);
   };
 
+  // Auto-fill from video transcription
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsProcessingVideo(true);
+    setVideoProgress(15);
+
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = async () => {
+        const base64Uri = reader.result as string;
+        setVideoProgress(50);
+
+        try {
+          const response = await fetch('/api/transcribe', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              file: base64Uri,
+              name: file.name,
+              apiKey: config?.groqApiKey,
+            }),
+          });
+
+          setVideoProgress(85);
+
+          if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || 'Error al transcribir el archivo.');
+          }
+
+          const data = await response.json();
+          setVideoProgress(100);
+          
+          // Auto-fill extraction logic
+          const textLower = data.text.toLowerCase();
+
+          // 1. Bird detection
+          let detectedBird = 'Palomas';
+          if (textLower.includes('paloma')) detectedBird = 'Palomas';
+          else if (textLower.includes('golondrina')) detectedBird = 'Golondrinas';
+          else if (textLower.includes('urraca')) detectedBird = 'Urracas';
+          else if (textLower.includes('gaviota')) detectedBird = 'Gaviotas';
+          else if (textLower.includes('gorrion') || textLower.includes('gorrión')) detectedBird = 'Gorriones';
+          
+          // 2. Systems detection
+          let detectedSystem = 'Red';
+          if (textLower.includes('red') || textLower.includes('malla')) detectedSystem = 'Red';
+          else if (textLower.includes('varilla') || textLower.includes('pincho') || textLower.includes('púa')) {
+            detectedSystem = 'Varillas';
+          }
+
+          // 3. Lineal meters extraction
+          let detectedMeters = 15;
+          const matchMeters = textLower.match(/(\d+)\s*(metros|metro|m\b)/);
+          if (matchMeters && matchMeters[1]) {
+            detectedMeters = parseInt(matchMeters[1], 10);
+            setMeters(detectedMeters);
+          }
+
+          // 4. Client Name extraction
+          let detectedClient = 'COMUNIDAD DE PROPIETARIOS';
+          const matchClient = textLower.match(/(comunidad\s+(?:de\s+)?(?:propietarios\s+)?(?:de\s+)?[\w\sñáéíóúÁÉÍÓÚ]+?(?=\s+en\b|\s+calle\b|\s+nº\b|\s+\d+|\.|$))/i);
+          if (matchClient && matchClient[0]) {
+            detectedClient = matchClient[0].toUpperCase().trim();
+          }
+
+          // 5. Address extraction
+          let detectedAddress = 'Calle Principal s/n';
+          const matchAddress = textLower.match(/(?:calle|avda|avenida|plaza|c\/)\s+[\w\sñáéíóúÁÉÍÓÚ\d,]+/i);
+          if (matchAddress && matchAddress[0]) {
+            detectedAddress = matchAddress[0].trim();
+          }
+ 
+          setSelectedBird(detectedBird);
+          setSelectedSystem(detectedSystem);
+ 
+          // Re-initialize from template to ensure clean replacements
+          const today = new Date();
+          const monthNames = [
+            'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+          ];
+          
+          const dayStr = today.getDate().toString().padStart(2, '0');
+          const monthStr = monthNames[today.getMonth()];
+          const yearStr = today.getFullYear().toString().substring(2);
+          
+          const z1 = detectedSystem === 'Red' ? 'Canalones y alféizares principales' : 'Cornisas principales de posado';
+          const z2 = detectedSystem === 'Red' ? 'Huecos de ventilación del ático' : 'Zonas comunes y repisas de ventanas';
+          const z3 = detectedSystem === 'Varillas' ? 'Cornisa superior trasera' : 'Zonas estructurales secundarias';
+          
+          const pcp = detectedAddress.match(/\b\d{5}\b/)?.[0] || '28001';
+          const pcpPrefix = pcp.substring(0, 3) + '00';
+          
+          const p1 = (detectedMeters * 35 * 0.5).toFixed(2);
+          const p2 = (detectedMeters * 35 * 0.2).toFixed(2);
+          const p3 = (detectedMeters * 35).toFixed(2);
+ 
+          // Update input states
+          setClientNameInput(detectedClient);
+          setClientAddressInput(detectedAddress);
+          setPrice1(p1);
+          setPrice2(p2);
+          setPrice3(p3);
+          
+          let freshHtml = WORD_TEMPLATE_HTML
+            .replace(/\[REF_CODE\]/g, quote.id.startsWith('q-new') ? 'Ref-ALC-' + Math.floor(Math.random() * 90000 + 10000) : quote.id)
+            .replace(/\[CLIENT_NAME\]/g, `<span class="client-name-field">${detectedClient.toUpperCase()}</span>`)
+            .replace(/\[CLIENT_ADDRESS\]/g, `<span class="client-address-field">${detectedAddress}</span>`)
+            .replace(/\[POSTAL_CODE\]/g, pcp)
+            .replace(/\[POSTAL_CODE_PREFIX\]/g, pcpPrefix)
+            .replace(/\[ATT_NAME\]/g, 'Presidente / Administrador de Fincas')
+            .replace(/\[DAY\]/g, dayStr)
+            .replace(/\[MONTH\]/g, monthStr)
+            .replace(/\[YEAR\]/g, yearStr)
+            .replace(/\[PLAGA\]/g, detectedBird)
+            .replace(/\[ZONAS_AFECTADAS\]/g, detectedSystem === 'Red' ? 'cornisas superiores y aleros' : 'líneas de fachada y repisas')
+            .replace(/\[INTRO_TECNICA\]/g, `durante la inspección se constató presencia activa de ${detectedBird.toLowerCase()} posándose y anidando en la zona.`)
+            .replace(/\[PROBLEMA_PRINCIPAL\]/g, 'es la acumulación de excrementos y el con consiguiente deterioro estético e higiénico.')
+            .replace(/\[DETALLE_ADICIONAL\]/g, 'se observaron nidos construidos y obstrucciones en los conductos.')
+            .replace(/\[ZONA_1\]/g, z1)
+            .replace(/\[ZONA_2\]/g, z2)
+            .replace(/\[ZONA_3\]/g, z3)
+            .replace(/\[PRECIO_1\]/g, `<span class="price-field-1">${p1}</span>`)
+            .replace(/\[PRECIO_2\]/g, `<span class="price-field-2">${p2}</span>`)
+            .replace(/\[PRECIO_3\]/g, `<span class="price-field-3">${p3}</span>`)
+            .replace(/\[TECNICO\]/g, 'Técnico Oficial Alcebo')
+            .replace(/\[TELEFONO\]/g, '900 123 456');
+ 
+          if (editorRef.current) {
+            editorRef.current.innerHTML = freshHtml;
+          }
+          setEditorHtml(freshHtml);
+          setCustomText(data.text);
+ 
+          setTimeout(() => {
+            setIsProcessingVideo(false);
+            showToast('¡Presupuesto rellenado con éxito desde el audio!');
+          }, 300);
+ 
+        } catch (err: any) {
+          console.error('Video auto-fill failed:', err);
+          setVideoProgress(100);
+          setTimeout(() => {
+            setIsProcessingVideo(false);
+            alert(`Error al procesar el vídeo:\n${err.message}`);
+          }, 200);
+        }
+      };
+    } catch (error) {
+      console.error('File reading failed:', error);
+      setIsProcessingVideo(false);
+    }
+  };
+
   // Export high-fidelity DOCX using server-side html-to-docx converter
   const handleExportDocx = async () => {
     if (!editorRef.current) return;
@@ -583,75 +743,160 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
         </div>
       </div>
 
-      {/* Parameters Panel Card */}
-      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs">
-        <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2.5">
-          <span className="material-symbols-outlined text-[#009FE3] text-lg">edit_note</span>
-          Parámetros del Presupuesto (Se actualizan automáticamente en el documento)
-        </h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-7 gap-4 mt-4">
-          <div className="md:col-span-2">
-            <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Nombre del Cliente</label>
-            <input 
-              type="text" 
-              value={clientNameInput} 
-              onChange={(e) => handleClientNameChange(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-[#009FE3] transition-colors"
-              placeholder="Ej: COMUNIDAD DE VECINOS"
-            />
-          </div>
-          <div className="md:col-span-2">
-            <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Dirección de Obra</label>
-            <input 
-              type="text" 
-              value={clientAddressInput} 
-              onChange={(e) => handleClientAddressChange(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-[#009FE3] transition-colors"
-              placeholder="Ej: Calle Principal s/n"
-            />
-          </div>
-          <div className="md:col-span-2">
-            <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Correo Electrónico del Cliente</label>
-            <input 
-              type="email" 
-              value={clientEmailInput} 
-              onChange={(e) => setClientEmailInput(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-[#009FE3] transition-colors"
-              placeholder="Ej: correo-cliente@ejemplo.com"
-            />
-          </div>
-          <div className="md:col-span-1">
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block mb-1 text-center">Precio L1 (€)</label>
-                <input 
-                  type="text" 
-                  value={price1} 
-                  onChange={(e) => handlePrice1Change(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-[#009FE3] transition-colors text-center"
-                />
-              </div>
-              <div>
-                <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block mb-1 text-center">Precio L2 (€)</label>
-                <input 
-                  type="text" 
-                  value={price2} 
-                  onChange={(e) => handlePrice2Change(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-[#009FE3] transition-colors text-center"
-                />
-              </div>
-              <div>
-                <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block mb-1 text-center">Precio L3 (€)</label>
-                <input 
-                  type="text" 
-                  value={price3} 
-                  onChange={(e) => handlePrice3Change(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-[#009FE3] transition-colors text-center"
-                />
+      {/* Voice Intelligence & Transcription Top Banner */}
+      <div className="bg-[#009FE3]/5 border border-[#009FE3]/25 rounded-3xl p-6 shadow-xs">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+          
+          {/* Column 1: Manual Data Entry */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between space-y-4">
+            <div>
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                <span className="material-symbols-outlined text-[#009FE3] text-lg">edit_note</span>
+                Parámetros del Presupuesto
+              </h3>
+              <div className="grid grid-cols-1 gap-3 mt-3">
+                <div>
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Nombre del Cliente</label>
+                  <input 
+                    type="text" 
+                    value={clientNameInput} 
+                    onChange={(e) => handleClientNameChange(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:border-[#009FE3] transition-colors"
+                    placeholder="Ej: COMUNIDAD DE VECINOS"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Dirección de Obra</label>
+                  <input 
+                    type="text" 
+                    value={clientAddressInput} 
+                    onChange={(e) => handleClientAddressChange(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:border-[#009FE3] transition-colors"
+                    placeholder="Ej: Calle Principal s/n"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Correo Electrónico del Cliente</label>
+                  <input 
+                    type="email" 
+                    value={clientEmailInput} 
+                    onChange={(e) => setClientEmailInput(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:border-[#009FE3] transition-colors"
+                    placeholder="Ej: correo-cliente@ejemplo.com"
+                  />
+                </div>
+                
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block mb-0.5 text-center">Precio L1 (€)</label>
+                    <input 
+                      type="text" 
+                      value={price1} 
+                      onChange={(e) => handlePrice1Change(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:border-[#009FE3] transition-colors text-center"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block mb-0.5 text-center">Precio L2 (€)</label>
+                    <input 
+                      type="text" 
+                      value={price2} 
+                      onChange={(e) => handlePrice2Change(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:border-[#009FE3] transition-colors text-center"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block mb-0.5 text-center">Precio L3 (€)</label>
+                    <input 
+                      type="text" 
+                      value={price3} 
+                      onChange={(e) => handlePrice3Change(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:border-[#009FE3] transition-colors text-center"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
+
+          {/* Column 2: Uploader */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between space-y-3">
+            <div>
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-2">
+                <span className="material-symbols-outlined text-[#009FE3] text-lg">mic_double</span>
+                Auto-relleno por Voz
+              </h3>
+            </div>
+
+            {isProcessingVideo ? (
+              <div className="space-y-3 text-center py-4 bg-slate-900 text-white rounded-xl p-4 border border-slate-800 shadow-lg flex-grow flex flex-col justify-center">
+                <div className="w-8 h-8 rounded-full border-4 border-sky-400 border-t-transparent animate-spin mx-auto mb-1"></div>
+                <p className="text-[11px] font-black tracking-tight">Procesando audio de voz...</p>
+                <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden p-[1px]">
+                  <div className="bg-[#009fe3] h-full transition-all duration-300" style={{ width: `${videoProgress}%` }}></div>
+                </div>
+                <span className="text-[9px] text-sky-400 font-mono font-bold">{videoProgress}%</span>
+              </div>
+            ) : (
+              <div className="flex-grow flex flex-col justify-center">
+                <input
+                  type="file"
+                  id="video-fill-input-editor-top"
+                  onChange={handleVideoUpload}
+                  accept="audio/*,video/*"
+                  className="hidden"
+                />
+                <label
+                  htmlFor="video-fill-input-editor-top"
+                  className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 hover:border-[#009FE3] rounded-xl p-6 text-center bg-slate-50 hover:bg-[#009FE3]/5 transition-all cursor-pointer group shadow-xs h-full"
+                >
+                  <span className="material-symbols-outlined text-[32px] text-slate-400 group-hover:text-[#009FE3] mb-1 block transition-transform group-hover:scale-110">cloud_upload</span>
+                  <p className="text-xs font-black text-slate-700">Sube el audio o vídeo de obra</p>
+                  <p className="text-[9px] text-slate-400 mt-0.5 leading-normal font-semibold">Extraerá textos y rellenará campos</p>
+                </label>
+              </div>
+            )}
+          </div>
+
+          {/* Column 3: Transcription or Guide */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between space-y-3">
+            {customText ? (
+              <div className="flex flex-col h-full justify-between space-y-2">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-1.5">
+                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[#009FE3] text-base">description</span>
+                    Texto Transcrito
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(customText);
+                      showToast('¡Transcripción copiada al portapapeles!');
+                    }}
+                    className="text-[10px] font-black text-[#009FE3] hover:text-[#006491] flex items-center gap-1 cursor-pointer bg-[#009FE3]/10 hover:bg-[#009FE3]/15 px-2 py-1 rounded-md transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-xs">content_copy</span>
+                    Copiar
+                  </button>
+                </div>
+                
+                <div className="flex-grow bg-slate-50 p-3 rounded-lg border border-slate-150 max-h-[120px] overflow-y-auto select-text">
+                  <p className="text-[11px] text-slate-600 font-semibold leading-relaxed whitespace-pre-wrap">
+                    {customText}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col h-full justify-center text-center space-y-2">
+                <span className="material-symbols-outlined text-[36px] text-slate-300 block">info</span>
+                <h4 className="text-xs font-black text-slate-700">Instrucciones del Relleno</h4>
+                <p className="text-[10px] text-slate-400 font-semibold leading-relaxed">
+                  Modifica los textos e importes en el formulario izquierdo y mira cómo se actualiza el documento de Word en tiempo real. O sube un vídeo para rellenarlo automáticamente.
+                </p>
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
 
