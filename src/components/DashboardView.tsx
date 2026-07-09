@@ -29,6 +29,25 @@ export default function DashboardView({ onAddQuote, config }: DashboardViewProps
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const handleCreateBlank = () => {
+    const blankQuote: Quote = {
+      id: 'q-' + Date.now(),
+      title: 'Nuevo Presupuesto',
+      date: new Date().toISOString().split('T')[0],
+      status: 'Borrador',
+      text: '',
+      birds: ['Palomas'],
+      systems: ['Red'],
+      estimationLineal: 15,
+      totalCost: 525.00,
+      clientName: '',
+      clientAddress: '',
+      notes: 'Presupuesto creado en blanco sin transcripción de vídeo.',
+      images: []
+    };
+    onAddQuote(blankQuote);
+  };
+
   // Run the regex-based automatic extraction on transcription change
   useEffect(() => {
     if (!transcription) return;
@@ -252,6 +271,16 @@ export default function DashboardView({ onAddQuote, config }: DashboardViewProps
           <span className="text-[10px] text-slate-450 font-semibold bg-slate-50 border border-slate-150 px-3 py-1.5 rounded-full uppercase tracking-wider">
             Formatos de vídeo y audio compatibles
           </span>
+
+          <div className="pt-2">
+            <button
+              onClick={handleCreateBlank}
+              className="px-6 py-3.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold rounded-xl text-xs uppercase cursor-pointer active:scale-95 transition-all shadow-sm flex items-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-sm">add_circle</span>
+              Crear Presupuesto en Blanco (Sin vídeo)
+            </button>
+          </div>
         </div>
       )}
 

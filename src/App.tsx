@@ -95,7 +95,8 @@ export default function App() {
   // Callbacks for Quotes
   const handleAddQuote = (newQuote: Quote) => {
     setQuotes((prev) => [newQuote, ...prev]);
-    setCurrentTab('presupuestos'); // Shift user to the budgets screen to inspect the new entry
+    setDraftQuote(newQuote);
+    setCurrentTab('editor'); // Go directly to the editor for this quote
   };
 
   const handleUpdateQuote = (updatedQuote: Quote) => {
@@ -139,13 +140,17 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex antialiased">
-      {/* Sidebar navigation */}
-      <Sidebar currentTab={currentTab} setCurrentTab={setCurrentTab} />
+      {/* Sidebar navigation: hide in editor tab to prevent squeezing the layout */}
+      {currentTab !== 'editor' && (
+        <Sidebar currentTab={currentTab} setCurrentTab={setCurrentTab} />
+      )}
       
-      {/* Main Workspace Frame */}
-      <div className="flex-1 flex flex-col min-h-screen w-full md:pl-64">
-        {/* Top App Bar */}
-        <TopAppBar currentTab={currentTab} />
+      {/* Main Workspace Frame: remove left margin when sidebar is hidden */}
+      <div className={`flex-1 flex flex-col min-h-screen w-full ${currentTab !== 'editor' ? 'md:pl-64' : ''}`}>
+        {/* Top App Bar: hide in editor tab */}
+        {currentTab !== 'editor' && (
+          <TopAppBar currentTab={currentTab} />
+        )}
         
         {/* Content viewport area */}
         <main className="flex-1 w-full pt-6 pb-10 px-4 md:px-8 bg-slate-50 overflow-x-hidden">
@@ -157,11 +162,11 @@ export default function App() {
             {currentTab === 'presupuestos' && (
               <PresupuestosView
                 quotes={quotes}
+                searchQuery={searchQuery}
+                onUpdateQuote={handleUpdateQuote}
                 onDeleteQuote={handleDeleteQuote}
-                onEditQuote={(q) => {
-                  setDraftQuote(q);
-                  setCurrentTab('editor');
-                }}
+                templates={templates}
+                rules={rules}
               />
             )}
             
@@ -173,7 +178,7 @@ export default function App() {
                   setDraftQuote(updatedQuote);
                 }}
                 onCancel={() => {
-                  setCurrentTab('presupuestos');
+                  setCurrentTab('dashboard'); // Return to upload dashboard
                 }}
                 templates={templates}
                 rules={rules}
