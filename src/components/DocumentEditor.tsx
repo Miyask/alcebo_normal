@@ -401,7 +401,7 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
       clientAddress: clientAddressInput,
       clientEmail: clientEmailInput,
       estimationLineal: meters,
-      totalCost: parseFloat((meters * 35).toFixed(2)),
+      totalCost: parseFloat(price3) || 0,
       documentHtml: htmlContent,
       text: cleanText.substring(0, 1000)
     };
@@ -511,16 +511,9 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
           const pcp = detectedAddress.match(/\b\d{5}\b/)?.[0] || '28001';
           const pcpPrefix = pcp.substring(0, 3) + '00';
           
-          const p1 = (detectedMeters * 35 * 0.5).toFixed(2);
-          const p2 = (detectedMeters * 35 * 0.2).toFixed(2);
-          const p3 = (detectedMeters * 35).toFixed(2);
- 
-          // Update input states
+          // Update input states (preserving manual prices and meters)
           setClientNameInput(detectedClient);
           setClientAddressInput(detectedAddress);
-          setPrice1(p1);
-          setPrice2(p2);
-          setPrice3(p3);
           
           let freshHtml = WORD_TEMPLATE_HTML
             .replace(/\[REF_CODE\]/g, quote.id.startsWith('q-new') ? 'Ref-ALC-' + Math.floor(Math.random() * 90000 + 10000) : quote.id)
@@ -540,9 +533,9 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
             .replace(/\[ZONA_1\]/g, z1)
             .replace(/\[ZONA_2\]/g, z2)
             .replace(/\[ZONA_3\]/g, z3)
-            .replace(/\[PRECIO_1\]/g, `<span class="price-field-1">${p1}</span>`)
-            .replace(/\[PRECIO_2\]/g, `<span class="price-field-2">${p2}</span>`)
-            .replace(/\[PRECIO_3\]/g, `<span class="price-field-3">${p3}</span>`)
+            .replace(/\[PRECIO_1\]/g, `<span class="price-field-1">${price1}</span>`)
+            .replace(/\[PRECIO_2\]/g, `<span class="price-field-2">${price2}</span>`)
+            .replace(/\[PRECIO_3\]/g, `<span class="price-field-3">${price3}</span>`)
             .replace(/\[TECNICO\]/g, 'Técnico Oficial Alcebo')
             .replace(/\[TELEFONO\]/g, '900 123 456');
  
@@ -590,7 +583,7 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
       clientAddress: clientAddressInput,
       clientEmail: clientEmailInput,
       estimationLineal: meters,
-      totalCost: parseFloat((meters * 35).toFixed(2)),
+      totalCost: parseFloat(price3) || 0,
     };
     
     enviarAlSeguimiento(currentQuote);
