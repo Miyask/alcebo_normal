@@ -71,3 +71,37 @@
   margin-left: 24px !important;
   margin-bottom: 12px !important;
 }
+
+/* Visual page breaks inside editor content area */
+.editor-content-area hr.page-break {
+  border: none !important;
+  border-top: 1px dashed #cbd5e1 !important;
+  margin: 30px -48px !important;
+  position: relative !important;
+  text-align: center !important;
+  height: 0 !important;
+  overflow: visible !important;
+}
+
+.editor-content-area hr.page-break::after {
+  content: "SALTO DE PÁGINA" !important;
+  display: inline-block !important;
+  position: relative !important;
+  top: -10px !important;
+  background: #ffffff !important;
+  padding: 0 12px !important;
+  color: #94a3b8 !important;
+  font-family: sans-serif !important;
+  font-size: 9px !important;
+  font-weight: bold !important;
+  letter-spacing: 0.1em !important;
+}
+
+@media print {
+  .editor-content-area hr.page-break {
+    page-break-before: always !important;
+    border: none !important;
+    margin: 0 !important;
+    height: 0 !important;
+  }
+}
