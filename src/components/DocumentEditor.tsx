@@ -4,6 +4,8 @@ import { DEFAULT_CONDITIONAL_TEXTS, DEFAULT_TEMPLATES } from '../data/defaults';
 import ImageAnnotator from './ImageAnnotator';
 import { WORD_TEMPLATE_HTML } from '../data/wordTemplateHtml';
 import { WATERMARK_BASE64 } from '../data/watermarkBase64';
+import PizZip from 'pizzip';
+import { WORD_TEMPLATE_BASE64 } from '../data/wordTemplateBase64';
 
 // Extract base64 images from template HTML on module load
 let IMAGE_RED_BASE64 = '';
@@ -1130,7 +1132,7 @@ ${fullHtml}
     showToast('¡Word de alta fidelidad (.doc) descargado con éxito!');
   };
 
-  // Export high-fidelity DOCX using server-side html-to-docx converter
+  // Export high-fidelity DOCX using 100% client-side template-filling
   const handleExportDocx = async () => {
     if (!editorRef.current) return;
     
@@ -1188,51 +1190,287 @@ ${fullHtml}
       const desPlagaEl = docEl.querySelector('.des-plaga-block');
       const plagaDescription = desPlagaEl ? desPlagaEl.textContent || '' : '';
 
-      const payload = {
-        html: htmlContent,
-        filename: `Presupuesto_${(extractedClient || 'Alcebo').replace(/\s+/g, '_')}`,
-        variables: {
-          refCode: getFieldText('ref-code-field', finalRefCode),
-          clientName: getFieldText('client-name-field', (extractedClient || 'Comunidad').toUpperCase()),
-          clientAddress: getFieldText('client-address-field', clientAddressInput),
-          postalCode: getFieldText('postal-code-field', '28001'),
-          postalCodePrefix: getFieldText('postal-code-prefix-field', '28'),
-          attName: getFieldText('att-name-field', 'Presidente / Administrador de Fincas'),
-          day: getFieldText('day-field', dayStr),
-          month: getFieldText('month-field', monthStr),
-          year: getFieldText('year-field', yearStr),
-          plaga: selectedBird,
-          zonasAfectadas: getFieldText('zonas-afectadas-field', priSys === 'Red' ? 'cornisas superiores y aleros' : 'líneas de fachada y repisas'),
-          introTecnica: getFieldText('transcription-field', textForIntro),
-          problemaPrincipal: getFieldText('problema-principal-field', textForProblem),
-          detalleAdicional: getFieldText('detalle-adicional-field', textForDetail),
-          zona1: getFieldText('zona-1-field', z1),
-          zona2: getFieldText('zona-2-field', z2),
-          zona3: getFieldText('zona-3-field', z3),
-          price1: getFieldText('price-field-1', p1_val),
-          price2: getFieldText('price-field-2', p2_val),
-          price3: getFieldText('price-field-3', p3_val),
-          tecnico: getFieldText('tecnico-field', 'Técnico Oficial Alcebo'),
-          telefono: getFieldText('telefono-field', '900 123 456'),
-          plagaDescription,
-          activeSystems: selectedSystems
-        }
+      const variables = {
+        refCode: getFieldText('ref-code-field', finalRefCode),
+        clientName: getFieldText('client-name-field', (extractedClient || 'Comunidad').toUpperCase()),
+        clientAddress: getFieldText('client-address-field', clientAddressInput),
+        postalCode: getFieldText('postal-code-field', '28001'),
+        postalCodePrefix: getFieldText('postal-code-prefix-field', '28'),
+        attName: getFieldText('att-name-field', 'Presidente / Administrador de Fincas'),
+        day: getFieldText('day-field', dayStr),
+        month: getFieldText('month-field', monthStr),
+        year: getFieldText('year-field', yearStr),
+        plaga: selectedBird,
+        zonasAfectadas: getFieldText('zonas-afectadas-field', priSys === 'Red' ? 'cornisas superiores y aleros' : 'líneas de fachada y repisas'),
+        introTecnica: getFieldText('transcription-field', textForIntro),
+        problemaPrincipal: getFieldText('problema-principal-field', textForProblem),
+        detalleAdicional: getFieldText('detalle-adicional-field', textForDetail),
+        zona1: getFieldText('zona-1-field', z1),
+        zona2: getFieldText('zona-2-field', z2),
+        zona3: getFieldText('zona-3-field', z3),
+        price1: getFieldText('price-field-1', p1_val),
+        price2: getFieldText('price-field-2', p2_val),
+        price3: getFieldText('price-field-3', p3_val),
+        tecnico: getFieldText('tecnico-field', 'Técnico Oficial Alcebo'),
+        telefono: getFieldText('telefono-field', '900 123 456'),
+        plagaDescription,
+        activeSystems: selectedSystems
       };
 
-      const response = await fetch('/api/export-docx', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error((errData.error || 'Fallo del compilador del servidor.') + (errData.details ? `\nDetalles: ${errData.details}` : '') + (errData.stack ? `\nStack: ${errData.stack}` : ''));
+      // 1. Extract base64 custom visit images from HTML img tags
+      const images: Record<string, string> = {};
+      const imgRegex = /<img[^>]+src="data:image\/(jpeg|png);base64,([^"]+)"[^>]*data-img-id="([^"]+)"/gi;
+      let match;
+      while ((match = imgRegex.exec(htmlContent)) !== null) {
+        if (match[3].startsWith('img_template_')) {
+          images[match[3]] = match[2];
+        }
+      }
+      
+      // Fallback: Map by order of appearance
+      const imgRawRegex = /<img[^>]+src="data:image\/(jpeg|png);base64,([^"]+)"/gi;
+      let idx = 0;
+      let matchRaw;
+      while ((matchRaw = imgRawRegex.exec(htmlContent)) !== null) {
+        idx++;
+        const base64 = matchRaw[2];
+        if (idx > 1) { // Skip logo
+          const imgId = `img_template_${idx}`;
+          if (!images[imgId]) {
+            images[imgId] = base64;
+          }
+        }
       }
 
-      const blob = await response.blob();
+      // 2. Load the base64 Word template using PizZip in the browser
+      const zip = new PizZip(WORD_TEMPLATE_BASE64, { base64: true });
+      let docXml = zip.file('word/document.xml').asText();
+
+      // 3. Modify XML placeholders
+      let atIdx = 0;
+      docXml = docXml.replace(/<w:t[^>]*>([\s\S]*?)<\/w:t>/gi, (match, content) => {
+        if (content.includes('@@')) {
+          atIdx++;
+          switch (atIdx) {
+            case 1: return `<w:t>${variables.refCode}</w:t>`;
+            case 2: return `<w:t>${variables.clientName}</w:t>`;
+            case 3: return `<w:t>${variables.clientAddress}</w:t>`;
+            case 4: return `<w:t>${variables.postalCode}   Madrid</w:t>`;
+            case 5: return `<w:t>${variables.attName}</w:t>`;
+            case 6: return `<w:t>${variables.day}</w:t>`;
+            case 7: return `<w:t>${variables.month}</w:t>`;
+            case 8: return `<w:t>${variables.year}</w:t>`;
+            case 9: return `<w:t>${variables.clientAddress}</w:t>`;
+            case 10: {
+              const pluralMap: Record<string, string> = {
+                'Palomas': 'palomas',
+                'Gorriones': 'gorriones',
+                'Cigüeñas': 'cigüeñas',
+                'Gaviotas': 'gaviotas',
+                'Cotorras': 'cotorras',
+                'Golondrinas': 'golondrinas',
+                'Urracas': 'urracas'
+              };
+              const pluralBird = pluralMap[variables.plaga] || variables.plaga.toLowerCase();
+              
+              const searchStr = '<w:t xml:space="preserve">palomas en </w:t>';
+              const nextPalomas = docXml.indexOf(searchStr);
+              if (nextPalomas !== -1) {
+                docXml = docXml.substring(0, nextPalomas) + '<w:t xml:space="preserve"> en </w:t>' + docXml.substring(nextPalomas + searchStr.length);
+              }
+              return `<w:t>${pluralBird}</w:t>`;
+            }
+            case 11: return `<w:t>${variables.zonasAfectadas}</w:t>`;
+            case 12: {
+              const lines = variables.introTecnica.split('\n').filter((l: string) => l.trim().length > 0);
+              if (lines.length > 0) {
+                return lines.join('</w:t></w:r></w:p><w:p><w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr><w:t>');
+              }
+              return `<w:t>se observó presencia activa de aves en la edificación</w:t>`;
+            }
+            case 13: return `<w:t>El problema principal ${variables.problemaPrincipal}</w:t>`;
+            case 14: return `<w:t>${variables.detalleAdicional}</w:t>`;
+            case 15: return `<w:t>${variables.zona1}</w:t>`;
+            case 16: return `<w:t>${variables.zona2}</w:t>`;
+            case 17: return `<w:t>${variables.zona3}</w:t>`;
+            case 18: return `<w:t>${variables.telefono}</w:t>`;
+            case 19: return `<w:t>${variables.postalCodePrefix}</w:t>`;
+            case 20: return `<w:t>${variables.refCode}</w:t>`;
+            case 21: return `<w:t>................ ${variables.price1}</w:t>`;
+            case 22: return `<w:t>${variables.price3}</w:t>`;
+            case 23: return `<w:t>........ ${variables.price2}</w:t>`;
+            case 24: return `<w:t>${variables.tecnico}</w:t>`;
+            case 25: return `<w:t>${variables.clientAddress}</w:t>`;
+          }
+        }
+        return match;
+      });
+
+      // 4. Inject plaga description
+      if (variables.plagaDescription) {
+        const birdAnchorRegex = /<w:p[^>]*>[\s\S]*?aprovechar los desechos animales[\s\S]*?<\/w:p>/i;
+        const lines = variables.plagaDescription.split('\n').filter(l => l.trim().length > 0);
+        const xmlParagraphs = lines.map(line => `
+          <w:p><w:pPr><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr></w:pPr>
+            <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:i/></w:rPr>
+              <w:t>${line}</w:t>
+            </w:r>
+          </w:p>
+        `).join('');
+        
+        docXml = docXml.replace(birdAnchorRegex, (match) => match + xmlParagraphs);
+      }
+
+      // 5. Remove unproposed systems
+      if (!variables.activeSystems.includes('Red')) {
+        const pRedTitle = /<w:p[^>]*>[\s\S]*?r:id="rId11"[\s\S]*?<\/w:p>/g;
+        docXml = docXml.replace(pRedTitle, '');
+        const pRedBullets = [
+          /<w:p[^>]*>[\s\S]*?Base de polietileno trenzado[\s\S]*?<\/w:p>/gi,
+          /<w:p[^>]*>[\s\S]*?Fijación de la red sobre cable[\s\S]*?<\/w:p>/gi,
+          /<w:p[^>]*>[\s\S]*?Cada hebra se forma por 3 filamentos[\s\S]*?<\/w:p>/gi,
+          /<w:p[^>]*>[\s\S]*?El diámetro del rombo[\s\S]*?<\/w:p>/gi,
+        ];
+        pRedBullets.forEach(re => { docXml = docXml.replace(re, ''); });
+      }
+
+      if (!variables.activeSystems.includes('Varillas')) {
+        const pVarillasTitle = /<w:p[^>]*>[\s\S]*?r:id="rId12"[\s\S]*?<\/w:p>/g;
+        docXml = docXml.replace(pVarillasTitle, '');
+        const pVarillasBullets = [
+          /<w:p[^>]*>[\s\S]*?Alambre de acero inoxidable[\s\S]*?<\/w:p>/gi,
+          /<w:p[^>]*>[\s\S]*?Punta roma de baja[\s\S]*?<\/w:p>/gi,
+          /<w:p[^>]*>[\s\S]*?Fijación con adhesivo sellador[\s\S]*?<\/w:p>/gi,
+        ];
+        pVarillasBullets.forEach(re => { docXml = docXml.replace(re, ''); });
+      }
+
+      // Add electric/capturas XML if proposed
+      const electricoXml = `
+        <w:p><w:pPr><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:b/></w:rPr>
+            <w:t>SISTEMA ELECTROESTÁTICO DISUASORIO (ELÉCTRICO): </w:t>
+          </w:r>
+          <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr>
+            <w:t>sus características son las siguientes:</w:t>
+          </w:r>
+        </w:p>
+        <w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="17"/></w:numPr><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr>
+            <w:t>Solución de alta discreción visual, ideal para edificios catalogados o zonas de alto valor estético.</w:t>
+          </w:r>
+        </w:p>
+        <w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="17"/></w:numPr><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr>
+            <w:t>Emisión de impulsos electroestáticos de baja frecuencia y baja intensidad, completamente inocuos para las aves pero altamente disuasorios.</w:t>
+          </w:r>
+        </w:p>
+        <w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="17"/></w:numPr><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr>
+            <w:t>Línea perimetral de conductores de acero inoxidable fijados sobre aisladores de policarbonato estabilizado.</w:t>
+          </w:r>
+        </w:p>
+      `;
+
+      const capturasXml = `
+        <w:p><w:pPr><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:b/></w:rPr>
+            <w:t>PLAN DE CAPTURAS SELECTIVAS: </w:t>
+          </w:r>
+          <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr>
+            <w:t>sus características son las siguientes:</w:t>
+          </w:r>
+        </w:p>
+        <w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="17"/></w:numPr><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr>
+            <w:t>Instalación de jaulas trampa homologadas dotadas de comederos, bebederos y sombreado para garantizar el bienestar animal.</w:t>
+          </w:r>
+        </w:p>
+        <w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="17"/></w:numPr><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr>
+            <w:t>Revisiones y mantenimiento periódico por técnicos autorizados para control de capturas, retirada selectiva y cebado.</w:t>
+          </w:r>
+        </w:p>
+        <w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="17"/></w:numPr><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr>
+            <w:t>Retirada y traslado humanitario de los ejemplares de acuerdo con la legislación autonómica de protección y sanidad animal.</w:t>
+          </w:r>
+        </w:p>
+      `;
+
+      if (variables.activeSystems.includes('Eléctrico') || variables.activeSystems.includes('Capturas')) {
+        const anchorRegex = /<w:p[^>]*>[\s\S]*?A continuación detallamos las características de los sistemas elegidos[\s\S]*?<\/w:p>/i;
+        docXml = docXml.replace(anchorRegex, (match) => {
+          let extraXml = '';
+          if (variables.activeSystems.includes('Eléctrico')) {
+            extraXml += electricoXml;
+          }
+          if (variables.activeSystems.includes('Capturas')) {
+            extraXml += capturasXml;
+          }
+          return match + extraXml;
+        });
+      }
+
+      // 6. Inject custom visit photos dynamically inside XML by appending relationships
+      let relsXml = zip.file('word/_rels/document.xml.rels').asText();
+      if (images['img_template_2']) { // Visit photo 1
+        relsXml = relsXml.replace('</Relationships>', '<Relationship Id="rId25" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image5.jpeg"/></Relationships>');
+        zip.file('word/media/image5.jpeg', atob(images['img_template_2']), { binary: true });
+      }
+      if (images['img_template_3']) { // Visit photo 2
+        relsXml = relsXml.replace('</Relationships>', '<Relationship Id="rId26" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image6.jpeg"/></Relationships>');
+        zip.file('word/media/image6.jpeg', atob(images['img_template_3']), { binary: true });
+      }
+      zip.file('word/_rels/document.xml.rels', relsXml);
+
+      let photoIdx = 0;
+      docXml = docXml.replace(/<w:p[^>]*>([\s\S]*?<w:t>Foto Muestra<\/w:t>[\s\S]*?)<\/w:p>/gi, (match) => {
+        photoIdx++;
+        if (photoIdx === 1 && images['img_template_2']) {
+          return `
+            <w:p>
+              <w:pPr><w:jc w:val="center"/></w:pPr>
+              <w:r>
+                <w:pict>
+                  <v:shape id="VisitPhoto1" style="width:360pt;height:240pt;" type="#_x0000_t75">
+                    <v:imagedata r:id="rId25" o:title="Foto Inspeccion 1"/>
+                  </v:shape>
+                </w:pict>
+              </w:r>
+            </w:p>
+          `;
+        }
+        if (photoIdx === 2 && images['img_template_3']) {
+          return `
+            <w:p>
+              <w:pPr><w:jc w:val="center"/></w:pPr>
+              <w:r>
+                <w:pict>
+                  <v:shape id="VisitPhoto2" style="width:360pt;height:240pt;" type="#_x0000_t75">
+                    <v:imagedata r:id="rId26" o:title="Foto Inspeccion 2"/>
+                  </v:shape>
+                </w:pict>
+              </w:r>
+            </w:p>
+          `;
+        }
+        return ''; // Delete the "Foto Muestra" placeholder text if no photo uploaded
+      });
+
+      // 7. Write modified XML back into zip
+      zip.file('word/document.xml', docXml);
+
+      // 8. Generate DOCX file blob and download it
+      const outBase64 = zip.generate({ type: 'base64' });
+      const binaryString = atob(outBase64);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      
+      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
