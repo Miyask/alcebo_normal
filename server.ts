@@ -21,6 +21,7 @@ async function startServer() {
   // Secure OpenRouter transcription proxy endpoint
   app.post('/api/transcribe', (req, res, next) => {
     const contentType = req.headers['content-type'] || '';
+    console.log('[LOCAL SERVER] Content-Type:', contentType);
     if (contentType.includes('application/octet-stream')) {
       express.raw({ type: 'application/octet-stream', limit: '100mb' })(req, res, next);
     } else {
@@ -29,6 +30,7 @@ async function startServer() {
   }, async (req, res) => {
     try {
       const contentType = req.headers['content-type'] || '';
+      console.log('[LOCAL SERVER] Inside handler, Content-Type:', contentType, 'Body type:', typeof req.body, 'IsBuffer:', Buffer.isBuffer(req.body));
       let fileBuffer: Buffer;
       let name = '';
       let apiKey = '';
@@ -225,7 +227,7 @@ Transcripción:
             'Content-Type': 'application/json'
           };
           body = {
-            model: 'llama-3.3-70b-specdec',
+            model: 'llama-3.3-70b-versatile',
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.1,
             response_format: { type: 'json_object' }
