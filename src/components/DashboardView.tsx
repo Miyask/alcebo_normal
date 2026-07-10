@@ -89,7 +89,7 @@ export default function DashboardView({ onAddQuote, config }: DashboardViewProps
   };
 
   // Extract audio track from video/audio files on the client side to bypass Vercel serverless size limits (4.5MB)
-  const extractAudioTrack = async (file: File, userHasKey: boolean): Promise<{ base64: string; name: string } | null> => {
+  const extractAudioTrack = async (file: File, userHasKey: boolean): Promise<{ blob: Blob; name: string } | null> => {
     try {
       if (file.type.startsWith('audio/') && file.size < 2 * 1024 * 1024) {
         return null;
@@ -125,17 +125,10 @@ export default function DashboardView({ onAddQuote, config }: DashboardViewProps
       const wavBlob = audioBufferToWav(renderedBuffer, use8Bit);
       console.log('Extracted WAV size in dashboard:', wavBlob.size, 'bytes');
 
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          resolve({
-            base64: reader.result as string,
-            name: file.name.replace(/\.[^/.]+$/, '') + '.wav'
-          });
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(wavBlob);
-      });
+      return {
+        blob: wavBlob,
+        name: file.name.replace(/\.[^/.]+$/, '') + '.wav'
+      };
     } catch (err: any) {
       console.warn('Audio extraction failed in dashboard, falling back to raw upload:', err);
       // Show an alert to help diagnose why the browser failed to extract/decode the file
@@ -216,18 +209,20 @@ export default function DashboardView({ onAddQuote, config }: DashboardViewProps
       setProgress(20);
       const audioResult = await extractAudioTrack(file, userHasKey);
 
-      const processWithBase64 = async (base64Uri: string, finalName: string) => {
-        const callProxyServer = async (uri: string, filename: string, key?: string) => {
+      const processWithBlob = async (fileBlob: Blob, finalName: string) => {
+        const callProxyServer = async (blobData: Blob, filename: string, key?: string) => {
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/octet-stream',
+            'X-File-Name': encodeURIComponent(filename),
+          };
+          if (key) {
+            headers['X-Api-Key'] = key;
+          }
+
           const response = await fetch('/api/transcribe', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              file: uri,
-              name: filename,
-              apiKey: key,
-            }),
+            headers: headers,
+            body: blobData,
           });
 
           const rawText = await response.text().catch(() => '');
@@ -258,7 +253,6 @@ export default function DashboardView({ onAddQuote, config }: DashboardViewProps
           if (userKey && userKey.startsWith('gsk_')) {
             console.log('Utilizando transcripción directa en panel principal (Groq)...');
             try {
-              const fileBlob = await (await fetch(base64Uri)).blob();
               const formData = new FormData();
               formData.append('file', fileBlob, finalName || 'audio.wav');
               formData.append('model', 'whisper-large-v3');
@@ -326,10 +320,10 @@ Transcripción:
               data = { text: transcriptionText, aiParsed };
             } catch (directErr) {
               console.warn('Llamada directa a Groq falló, recurriendo al servidor proxy...', directErr);
-              data = await callProxyServer(base64Uri, finalName, userKey);
+              data = await callProxyServer(fileBlob, finalName, userKey);
             }
           } else {
-            data = await callProxyServer(base64Uri, finalName, userKey);
+            data = await callProxyServer(fileBlob, finalName, userKey);
           }
 
           const ai = data.aiParsed;
@@ -359,16 +353,14 @@ Transcripción:
       };
 
       if (audioResult) {
-        console.log('Audio track extracted successfully, processing WAV in dashboard...');
-        await processWithBase64(audioResult.base64, audioResult.name);
+        console.log('Audio track extracted successfully, processing Blob in dashboard...');
+        await processWithBlob(audioResult.blob, audioResult.name);
       } else {
         console.log('Using raw file for transcription in dashboard...');
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = async () => {
-          const base64Uri = reader.result as string;
-          await processWithBase64(base64Uri, file.name);
-        };
+        if (file.size > 4.2 * 1024 * 1024) {
+          throw new Error('El navegador no ha podido extraer el audio de este vídeo y su tamaño (' + (file.size / (1024 * 1024)).toFixed(2) + 'MB) supera el límite del servidor (4.5MB).\n\nPara solucionar esto:\n1. Introduce una clave de API de Groq en "Ajustes" para subir archivos de hasta 25MB directamente desde tu navegador.\n2. O bien sube un archivo de AUDIO (ej. .mp3, .m4a) que son mucho más ligeros.');
+        }
+        await processWithBlob(file, file.name);
       }
     } catch (error: any) {
       console.error('File reading failed:', error);
