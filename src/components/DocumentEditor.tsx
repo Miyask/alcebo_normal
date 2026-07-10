@@ -1067,7 +1067,7 @@ Transcripción:
 
       if (!response.ok) {
         const errData = await response.json();
-        throw new Error(errData.error || 'Fallo del compilador del servidor.');
+        throw new Error((errData.error || 'Fallo del compilador del servidor.') + (errData.details ? `\nDetalles: ${errData.details}` : '') + (errData.stack ? `\nStack: ${errData.stack}` : ''));
       }
 
       const blob = await response.blob();
