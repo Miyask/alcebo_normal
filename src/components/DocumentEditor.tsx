@@ -722,6 +722,7 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
           const headers: Record<string, string> = {
             'Content-Type': 'application/octet-stream',
             'X-File-Name': encodeURIComponent(filename),
+            'X-File-Type': blobData.type || 'audio/wav',
           };
           if (key) {
             headers['X-Api-Key'] = key;

@@ -33,21 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fileBuffer = rawBody;
       name = decodeURIComponent((req.headers['x-file-name'] as string) || 'audio.wav');
       apiKey = (req.headers['x-api-key'] as string) || '';
-      
-      const ext = name.split('.').pop()?.toLowerCase();
-      const extToMime: Record<string, string> = {
-        'wav': 'audio/wav',
-        'mp3': 'audio/mpeg',
-        'ogg': 'audio/ogg',
-        'webm': 'audio/webm',
-        'flac': 'audio/flac',
-        'aac': 'audio/aac',
-        'm4a': 'audio/m4a',
-        'mp4': 'video/mp4',
-      };
-      if (ext && extToMime[ext]) {
-        mimeType = extToMime[ext];
-      }
+      mimeType = (req.headers['x-file-type'] as string) || 'audio/wav';
     } else {
       // Fallback for JSON body
       const body = JSON.parse(rawBody.toString('utf-8'));
