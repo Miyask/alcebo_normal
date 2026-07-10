@@ -124,7 +124,7 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
           <li>Cada hebra se forma por 3 filamentos dobles, confiriendo una resistencia muy superior a la necesaria y un diámetro de fibras que impide a las palomas posarse sobre la red.</li>
           <li>El diámetro del rombo de la red de paloma (50 mm.) impide que las palomas pasen a su través sin disminuir la luminosidad ni la ventilación natural.</li>
         </ul>
-        <img src="${IMAGE_RED_BASE64}" class="document-image" data-img-id="img_template_2" style="width:550px; max-width:100%; height:auto; border:1px solid #bec8d2; border-radius:8px;" />
+        <img src="${IMAGE_RED_BASE64}" class="document-image" data-img-id="img_system_red" style="width:550px; max-width:100%; height:auto; border:1px solid #bec8d2; border-radius:8px;" />
       `;
     }
     if (activeSystems.includes('Varillas')) {
@@ -135,7 +135,7 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
           <li>Punta roma de baja reflectancia que no daña a las aves pero impide su posado.</li>
           <li>Fijación con adhesivo sellador de poliuretano de exteriores.</li>
         </ul>
-        <img src="${IMAGE_VARILLAS_BASE64}" class="document-image" data-img-id="img_template_3" style="width:550px; max-width:100%; height:auto; border:1px solid #bec8d2; border-radius:8px;" />
+        <img src="${IMAGE_VARILLAS_BASE64}" class="document-image" data-img-id="img_system_varillas" style="width:550px; max-width:100%; height:auto; border:1px solid #bec8d2; border-radius:8px;" />
       `;
     }
     if (activeSystems.includes('Eléctrico')) {
@@ -992,9 +992,69 @@ Transcripción:
     enviarAlSeguimiento(currentQuote);
     
     try {
+      const docEl = editorRef.current;
+      const getFieldText = (className: string, fallback: string): string => {
+        const el = docEl.querySelector(`.${className}`);
+        return el ? el.textContent || fallback : fallback;
+      };
+
+      const today = new Date();
+      const monthNames = [
+        'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+      ];
+      
+      const dayStr = today.getDate().toString().padStart(2, '0');
+      const monthStr = monthNames[today.getMonth()];
+      const yearStr = today.getFullYear().toString().substring(2);
+
+      const priSys = selectedSystems[0] || 'Red';
+      const z1 = priSys === 'Red' ? 'Canalones y alféizares principales' : 'Cornisas principales de posado';
+      const z2 = priSys === 'Red' ? 'Huecos de ventilación del ático' : 'Zonas comunes y repisas de ventanas';
+      const z3 = priSys === 'Varillas' ? 'Cornisa superior trasera' : 'Zonas estructurales secundarias';
+
+      const p1_val = quote.price1 || price1;
+      const p2_val = quote.price2 || price2;
+      const p3_val = quote.price3 || price3;
+
+      const finalRefCode = quote.refCode || (quote.id.startsWith('q-new') ? 'Ref-ALC-' + Math.floor(Math.random() * 90000 + 10000) : quote.id);
+
+      const textForIntro = cleanIntroText(quote.introTecnica || quote.text || "las aves se posaban y anidaban activamente en las zonas elevadas, provocando acumulación de suciedad y daños estructurales");
+      const textForProblem = cleanProblemText(quote.problemaPrincipal || "es la acumulación de excrementos y el consiguiente deterioro estético e higiénico.");
+      const textForDetail = quote.detalleAdicional || "las bajantes de agua pluvial estaban obstruidas por nidos y plumas";
+
+      const desPlagaEl = docEl.querySelector('.des-plaga-block');
+      const plagaDescription = desPlagaEl ? desPlagaEl.textContent || '' : '';
+
       const payload = {
         html: htmlContent,
-        filename: `Presupuesto_${quote.clientName.replace(/\s+/g, '_') || 'Alcebo'}`
+        filename: `Presupuesto_${(extractedClient || 'Alcebo').replace(/\s+/g, '_')}`,
+        variables: {
+          refCode: getFieldText('ref-code-field', finalRefCode),
+          clientName: getFieldText('client-name-field', (extractedClient || 'Comunidad').toUpperCase()),
+          clientAddress: getFieldText('client-address-field', clientAddressInput),
+          postalCode: getFieldText('postal-code-field', '28001'),
+          postalCodePrefix: getFieldText('postal-code-prefix-field', '28'),
+          attName: getFieldText('att-name-field', 'Presidente / Administrador de Fincas'),
+          day: getFieldText('day-field', dayStr),
+          month: getFieldText('month-field', monthStr),
+          year: getFieldText('year-field', yearStr),
+          plaga: selectedBird,
+          zonasAfectadas: getFieldText('zonas-afectadas-field', priSys === 'Red' ? 'cornisas superiores y aleros' : 'líneas de fachada y repisas'),
+          introTecnica: getFieldText('transcription-field', textForIntro),
+          problemaPrincipal: getFieldText('problema-principal-field', textForProblem),
+          detalleAdicional: getFieldText('detalle-adicional-field', textForDetail),
+          zona1: getFieldText('zona-1-field', z1),
+          zona2: getFieldText('zona-2-field', z2),
+          zona3: getFieldText('zona-3-field', z3),
+          price1: getFieldText('price-field-1', p1_val),
+          price2: getFieldText('price-field-2', p2_val),
+          price3: getFieldText('price-field-3', p3_val),
+          tecnico: getFieldText('tecnico-field', 'Técnico Oficial Alcebo'),
+          telefono: getFieldText('telefono-field', '900 123 456'),
+          plagaDescription,
+          activeSystems: selectedSystems
+        }
       };
 
       const response = await fetch('/api/export-docx', {
@@ -1014,7 +1074,7 @@ Transcripción:
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Presupuesto_${quote.clientName.replace(/\s+/g, '_') || 'Alcebo'}.docx`;
+      a.download = `Presupuesto_${(extractedClient || 'Alcebo').replace(/\s+/g, '_')}.docx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
