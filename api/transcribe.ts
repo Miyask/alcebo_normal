@@ -6,7 +6,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { file, name, apiKey } = req.body;
+    const { file, name, apiKey, llmApiKey } = req.body;
 
     if (!file) {
       return res.status(400).json({ error: 'No se proporcionó ningún archivo de audio o vídeo.' });
@@ -162,14 +162,17 @@ JSON keys:
 Transcripción:
 "${transcriptionText}"`;
 
+      const finalLlmKey = (llmApiKey && llmApiKey.trim()) || finalApiKey;
+      const isLlmGroq = finalLlmKey.startsWith('gsk_');
+
       let llmUrl = '';
       let headers: Record<string, string> = {};
       let body: any = {};
 
-      if (isGroq) {
+      if (isLlmGroq) {
         llmUrl = 'https://api.groq.com/openai/v1/chat/completions';
         headers = {
-          'Authorization': `Bearer ${finalApiKey}`,
+          'Authorization': `Bearer ${finalLlmKey}`,
           'Content-Type': 'application/json'
         };
         body = {
@@ -181,7 +184,7 @@ Transcripción:
       } else {
         llmUrl = 'https://openrouter.ai/api/v1/chat/completions';
         headers = {
-          'Authorization': `Bearer ${finalApiKey}`,
+          'Authorization': `Bearer ${finalLlmKey}`,
           'Content-Type': 'application/json',
           'HTTP-Referer': 'https://alcebo-technical-quotes.vercel.app',
           'X-Title': 'Alcebo Quotes'

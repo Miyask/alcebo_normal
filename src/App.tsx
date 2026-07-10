@@ -43,14 +43,7 @@ export default function App() {
 
   const [config, setConfig] = useState<SystemConfig>(() => {
     const stored = localStorage.getItem('alcebo_config');
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (!parsed.groqApiKey || !parsed.groqApiKey.startsWith('gsk_')) {
-        return DEFAULT_CONFIG;
-      }
-      return parsed;
-    }
-    return DEFAULT_CONFIG;
+    return stored ? JSON.parse(stored) : DEFAULT_CONFIG;
   });
 
   // Helper to generate a fresh new empty quote

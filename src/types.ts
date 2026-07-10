@@ -38,6 +38,7 @@ export interface ConditionalText {
 
 export interface SystemConfig {
   groqApiKey: string;
+  llmApiKey: string;
   baseUrl: string;
   isWhisperActive: boolean;
 }

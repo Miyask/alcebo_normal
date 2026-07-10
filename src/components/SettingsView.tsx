@@ -8,6 +8,7 @@ interface SettingsViewProps {
 
 export default function SettingsView({ config, onSaveConfig }: SettingsViewProps) {
   const [apiKey, setApiKey] = useState<string>(config.groqApiKey);
+  const [llmApiKey, setLlmApiKey] = useState<string>(config.llmApiKey || '');
   const [url, setUrl] = useState<string>(config.baseUrl);
   const [showKey, setShowKey] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -16,6 +17,7 @@ export default function SettingsView({ config, onSaveConfig }: SettingsViewProps
     e.preventDefault();
     const updated: SystemConfig = {
       groqApiKey: apiKey,
+      llmApiKey: llmApiKey,
       baseUrl: url,
       isWhisperActive: apiKey.trim().length > 10,
     };
@@ -62,18 +64,19 @@ export default function SettingsView({ config, onSaveConfig }: SettingsViewProps
         <div className="md:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
           <div>
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <span>🔑</span>
-              Clave de Licencia (API OpenRouter)
+              <span>⚙️</span>
+              Claves de API e Inteligencia Artificial
             </h3>
             <p className="text-xs text-slate-400 mt-1">
-              Esta clave permite la comunicación con el motor de transcripción Whisper para la entrada por voz.
+              Configura tus claves personales de API para los procesos de transcripción de voz y estructuración inteligente del presupuesto.
             </p>
           </div>
 
           <form onSubmit={handleSave} className="space-y-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                CLAVE DE LICENCIA / API_KEY
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex justify-between">
+                <span>Clave API Transcripción (Whisper)</span>
+                <span className="text-[9px] text-[#009fe3] font-bold">Opcional</span>
               </label>
               <div className="relative">
                 <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-base select-none">
@@ -83,7 +86,7 @@ export default function SettingsView({ config, onSaveConfig }: SettingsViewProps
                   type={showKey ? 'text' : 'password'}
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Introduce tu clave de licencia"
+                  placeholder="Introduce clave de Groq o OpenRouter (deja vacío para usar la de fábrica)"
                   className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold font-mono text-slate-700 focus:border-[#009fe3] focus:ring-1 focus:ring-[#009fe3]/30 outline-none"
                 />
                 <button
@@ -95,6 +98,25 @@ export default function SettingsView({ config, onSaveConfig }: SettingsViewProps
                     {showKey ? 'visibility_off' : 'visibility'}
                   </span>
                 </button>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex justify-between">
+                <span>Clave API Estructuración (LLM)</span>
+                <span className="text-[9px] text-[#009fe3] font-bold">Opcional</span>
+              </label>
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-base select-none">
+                  smart_toy
+                </span>
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  value={llmApiKey}
+                  onChange={(e) => setLlmApiKey(e.target.value)}
+                  placeholder="Introduce clave de OpenRouter o Groq (deja vacío para usar la de fábrica)"
+                  className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold font-mono text-slate-700 focus:border-[#009fe3] focus:ring-1 focus:ring-[#009fe3]/30 outline-none"
+                />
               </div>
             </div>
 

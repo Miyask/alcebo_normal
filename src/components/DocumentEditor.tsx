@@ -613,6 +613,7 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
 
     try {
       const userKey = config?.groqApiKey?.trim();
+      const userLlmKey = config?.llmApiKey?.trim();
 
       const reader = new FileReader();
       reader.readAsDataURL(file);
@@ -622,7 +623,7 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
         try {
           let data: { text: string; aiParsed?: any } = { text: '' };
 
-          const callProxyServer = async (uri: string, filename: string, key?: string) => {
+          const callProxyServer = async (uri: string, filename: string, key?: string, llmKey?: string) => {
             const response = await fetch('/api/transcribe', {
               method: 'POST',
               headers: {
@@ -632,6 +633,7 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
                 file: uri,
                 name: filename,
                 apiKey: key,
+                llmApiKey: llmKey,
               }),
             });
 
@@ -704,14 +706,23 @@ JSON keys:
 Transcripción:
 "${transcriptionText}"`;
 
-              const llmRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+              const finalLlmKey = userLlmKey || userKey;
+              const isLlmGroq = finalLlmKey.startsWith('gsk_');
+              const llmUrl = isLlmGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
+              const llmModel = isLlmGroq ? 'llama-3.3-70b-versatile' : 'meta-llama/llama-3.3-70b-instruct';
+
+              const llmRes = await fetch(llmUrl, {
                 method: 'POST',
                 headers: {
-                  'Authorization': `Bearer ${userKey}`,
-                  'Content-Type': 'application/json'
+                  'Authorization': `Bearer ${finalLlmKey}`,
+                  'Content-Type': 'application/json',
+                  ...(isLlmGroq ? {} : {
+                    'HTTP-Referer': 'https://alcebo-technical-quotes.vercel.app',
+                    'X-Title': 'Alcebo Quotes'
+                  })
                 },
                 body: JSON.stringify({
-                  model: 'llama-3.3-70b-versatile',
+                  model: llmModel,
                   messages: [{ role: 'user', content: prompt }],
                   temperature: 0.1,
                   response_format: { type: 'json_object' }
@@ -728,10 +739,10 @@ Transcripción:
               data = { text: transcriptionText, aiParsed };
             } catch (directErr: any) {
               console.warn('Llamada directa a Groq falló o no está disponible. Reintentando por servidor proxy...', directErr);
-              data = await callProxyServer(base64Uri, file.name, userKey);
+              data = await callProxyServer(base64Uri, file.name, userKey, userLlmKey);
             }
           } else {
-            data = await callProxyServer(base64Uri, file.name, userKey);
+            data = await callProxyServer(base64Uri, file.name, userKey, userLlmKey);
           }
 
           setVideoProgress(100);

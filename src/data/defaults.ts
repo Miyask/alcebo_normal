@@ -2,6 +2,7 @@ import { Quote, Template, ConditionalText, SystemConfig } from '../types';
 
 export const DEFAULT_CONFIG: SystemConfig = {
   groqApiKey: import.meta.env.VITE_GROQ_API_KEY || '',
+  llmApiKey: import.meta.env.VITE_LLM_API_KEY || '',
   baseUrl: 'https://api.groq.com/openai/v1',
   isWhisperActive: true,
 };
