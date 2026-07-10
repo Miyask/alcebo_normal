@@ -229,6 +229,14 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
     if (quote.documentHtml && quote.documentHtml.length > 50) {
       let docHtml = quote.documentHtml;
       
+      // Clean up any duplicate cover-page-wrapper that resulted from the previous bug
+      if (docHtml.includes('cover-page-wrapper') && (docHtml.match(/cover-page-wrapper/g) || []).length > 1) {
+        docHtml = docHtml.replace(
+          /<\/div><hr class="page-break" \/><p><strong>CONTENIDO<\/strong><\/p><div class="cover-page-wrapper"[^>]*><p[^>]*><strong>PRESUPUESTO<\/strong><\/p>/gi,
+          '</div><hr class="page-break" /><p><strong>CONTENIDO</strong></p><p><strong>presupuesto</strong></p>'
+        );
+      }
+      
       // Patch old drafts that don't have .des-plaga-block
       if (!docHtml.includes('des-plaga-block')) {
         docHtml = docHtml.replace(/en zonas rurales se concentran junto a explotaciones ganaderas para aprovechar los desechos animales\.<\/p>/gi, 
@@ -248,7 +256,7 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
       // Patch old drafts that don't have cover-page-wrapper
       if (!docHtml.includes('cover-page-wrapper')) {
         docHtml = docHtml
-          .replace(/<p><strong>presupuesto<\/strong><\/p>/gi, '<div class="cover-page-wrapper" style="text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 800px;"><p style="text-align: center; font-size: 24pt; margin-top: 50px;"><strong>PRESUPUESTO</strong></p>')
+          .replace(/<p><strong>presupuesto<\/strong><\/p>/i, '<div class="cover-page-wrapper" style="text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 800px;"><p style="text-align: center; font-size: 24pt; margin-top: 50px;"><strong>PRESUPUESTO</strong></p>')
           .replace(/<p><strong>CONTENIDO<\/strong><\/p>/gi, '</div><hr class="page-break" /><p><strong>CONTENIDO</strong></p>');
       }
 
@@ -324,7 +332,7 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
         .replace(/\[TELEFONO\]/g, `<span class="telefono-field">900 123 456</span>`)
         .replace(/\[DESCRIPCION_PLAGA\]/g, '')
         .replace(/\[DESCRIPCIONES_SISTEMAS\]/g, '')
-        .replace(/<p><strong>presupuesto<\/strong><\/p>/gi, '<div class="cover-page-wrapper" style="text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 800px;"><p style="text-align: center; font-size: 24pt; margin-top: 50px;"><strong>PRESUPUESTO</strong></p>')
+        .replace(/<p><strong>presupuesto<\/strong><\/p>/i, '<div class="cover-page-wrapper" style="text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 800px;"><p style="text-align: center; font-size: 24pt; margin-top: 50px;"><strong>PRESUPUESTO</strong></p>')
         .replace(/<p><strong>CONTENIDO<\/strong><\/p>/gi, '</div><hr class="page-break" /><p><strong>CONTENIDO</strong></p>')
         .replace(/<p><strong>1\.-  CONTROL DE AVES URBANAS/gi, '<hr class="page-break" /><p><strong>1.-  CONTROL DE AVES URBANAS')
         .replace(/<p><strong>2\.- LEGISLACIÓN<\/strong><\/p>/gi, '<hr class="page-break" /><p><strong>2.- LEGISLACIÓN</strong></p>')
@@ -769,7 +777,7 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
             .replace(/\[TELEFONO\]/g, `<span class="telefono-field">900 123 456</span>`)
             .replace(/\[DESCRIPCION_PLAGA\]/g, '')
             .replace(/\[DESCRIPCIONES_SISTEMAS\]/g, '')
-            .replace(/<p><strong>presupuesto<\/strong><\/p>/gi, '<div class="cover-page-wrapper" style="text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 800px;"><p style="text-align: center; font-size: 24pt; margin-top: 50px;"><strong>PRESUPUESTO</strong></p>')
+            .replace(/<p><strong>presupuesto<\/strong><\/p>/i, '<div class="cover-page-wrapper" style="text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 800px;"><p style="text-align: center; font-size: 24pt; margin-top: 50px;"><strong>PRESUPUESTO</strong></p>')
             .replace(/<p><strong>CONTENIDO<\/strong><\/p>/gi, '</div><hr class="page-break" /><p><strong>CONTENIDO</strong></p>')
             .replace(/<p><strong>1\.-  CONTROL DE AVES URBANAS/gi, '<hr class="page-break" /><p><strong>1.-  CONTROL DE AVES URBANAS')
             .replace(/<p><strong>2\.- LEGISLACIÓN<\/strong><\/p>/gi, '<hr class="page-break" /><p><strong>2.- LEGISLACIÓN</strong></p>')
