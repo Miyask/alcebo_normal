@@ -404,6 +404,15 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
     };
   }, []);
 
+  // Synchronize editorHtml with the DOM only when they differ (avoids React rebuilding innerHTML on keystrokes, which resets cursor and scroll position)
+  useEffect(() => {
+    if (editorRef.current) {
+      if (editorRef.current.innerHTML !== editorHtml) {
+        editorRef.current.innerHTML = editorHtml;
+      }
+    }
+  }, [editorHtml]);
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
@@ -1125,7 +1134,6 @@ Transcripción:
                 suppressContentEditableWarning
                 onInput={handleEditorInput}
                 className="outline-none min-h-[1050px] text-justify font-sans text-xs text-slate-800 space-y-6 editor-content-area"
-                dangerouslySetInnerHTML={{ __html: editorHtml }}
               />
             </div>
 
