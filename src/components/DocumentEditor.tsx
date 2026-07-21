@@ -1442,7 +1442,56 @@ ${fullHtml}
         return match;
       });
 
-      // 4. Inject plaga description and bird images
+      // 4. Inject plaga description and bird images using native DrawingML for Word 2013
+      let drawingIdCounter = 1000;
+      const createDrawingMLXml = (rId: string, widthPt: number, heightPt: number, name: string) => {
+        const docPrId = ++drawingIdCounter;
+        const cx = Math.round(widthPt * 12700);
+        const cy = Math.round(heightPt * 12700);
+        return `
+          <w:p>
+            <w:pPr><w:jc w:val="center"/></w:pPr>
+            <w:r>
+              <w:drawing>
+                <wp:inline distT="0" distB="0" distL="0" distR="0">
+                  <wp:extent cx="${cx}" cy="${cy}"/>
+                  <wp:effectExtent l="0" t="0" r="0" b="0"/>
+                  <wp:docPr id="${docPrId}" name="${name}"/>
+                  <wp:cNvGraphicFramePr>
+                    <a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/>
+                  </wp:cNvGraphicFramePr>
+                  <a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+                    <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                      <pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                        <pic:nvPicPr>
+                          <pic:cNvPr id="${docPrId}" name="${name}"/>
+                          <pic:cNvPicPr/>
+                        </pic:nvPicPr>
+                        <pic:blipFill>
+                          <a:blip r:embed="${rId}"/>
+                          <a:stretch>
+                            <a:fillRect/>
+                          </a:stretch>
+                        </pic:blipFill>
+                        <pic:spPr>
+                          <a:xfrm>
+                            <a:off x="0" y="0"/>
+                            <a:ext cx="${cx}" cy="${cy}"/>
+                          </a:xfrm>
+                          <a:prstGeom prst="rect">
+                            <a:avLst/>
+                          </a:prstGeom>
+                        </pic:spPr>
+                      </pic:pic>
+                    </a:graphicData>
+                  </a:graphic>
+                </wp:inline>
+              </w:drawing>
+            </w:r>
+          </w:p>
+        `;
+      };
+
       const birdImageParagraphs: string[] = [];
       selectedBirds.forEach(birdKey => {
         const bird = BIRDS_DATA.find(b => b.key.toLowerCase() === birdKey.toLowerCase() || b.name.toLowerCase() === birdKey.toLowerCase());
@@ -1458,18 +1507,7 @@ ${fullHtml}
             );
             zip.file(`word/${bTargetPath}`, atob(bImg.base64), { binary: true });
 
-            birdImageParagraphs.push(`
-              <w:p>
-                <w:pPr><w:jc w:val="center"/></w:pPr>
-                <w:r>
-                  <w:pict>
-                    <v:shape id="BirdPhoto_${birdKey}_${idx}" style="width:240pt;height:160pt;" type="#_x0000_t75">
-                      <v:imagedata r:id="${bRelId}" o:title="${bird.name}"/>
-                    </v:shape>
-                  </w:pict>
-                </w:r>
-              </w:p>
-            `);
+            birdImageParagraphs.push(createDrawingMLXml(bRelId, 240, 160, bird.name));
           });
         }
       });
@@ -1579,7 +1617,7 @@ ${fullHtml}
         });
       }
 
-      // 6. Inject custom visit photos dynamically inside XML by appending unique relationships
+      // 6. Inject custom visit photos dynamically inside XML by appending unique relationships using DrawingML
       const visitRelIds: string[] = [];
       if (images['img_template_2']) { // Visit photo 1
         const rId1 = `rId${nextRelIdNum++}`;
@@ -1605,18 +1643,7 @@ ${fullHtml}
         
         if (images[key] && imgDimensions[key] && rId) {
           const { widthPt, heightPt } = imgDimensions[key];
-          return `
-            <w:p>
-              <w:pPr><w:jc w:val="center"/></w:pPr>
-              <w:r>
-                <w:pict>
-                  <v:shape id="VisitPhoto${photoIdx}" style="width:${widthPt}pt;height:${heightPt}pt;" type="#_x0000_t75">
-                    <v:imagedata r:id="${rId}" o:title="Foto Inspeccion ${photoIdx}"/>
-                  </v:shape>
-                </w:pict>
-              </w:r>
-            </w:p>
-          `;
+          return createDrawingMLXml(rId, widthPt, heightPt, `Foto Inspección ${photoIdx}`);
         }
         return ''; // Delete the "Foto Muestra" placeholder text if no photo uploaded
       });
