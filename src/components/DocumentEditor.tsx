@@ -43,6 +43,7 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
   // Selectors/parameters state for video extraction fallback bindings
   const [selectedBirds, setSelectedBirds] = useState<string[]>(quote.birds && quote.birds.length > 0 ? quote.birds : ['Palomas']);
   const selectedBird = selectedBirds.join(', ') || 'Palomas';
+  const primaryBird = selectedBird;
   const [selectedSystems, setSelectedSystems] = useState<string[]>(quote.systems && quote.systems.length > 0 ? quote.systems : ['Red']);
   const selectedSystem = selectedSystems[0] || 'Red';
   const [meters, setMeters] = useState<number>(quote.estimationLineal || 15);
@@ -111,7 +112,7 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
   const [clientEmailInput, setClientEmailInput] = useState<string>(quote.clientEmail || '');
 
   useEffect(() => {
-    setSelectedBird((quote.birds && quote.birds[0]) || 'Palomas');
+    setSelectedBirds(quote.birds && quote.birds.length > 0 ? quote.birds : ['Palomas']);
     setSelectedSystems(quote.systems && quote.systems.length > 0 ? quote.systems : ['Red']);
     setMeters(quote.estimationLineal || 15);
     setCustomText(quote.text || '');
@@ -917,7 +918,7 @@ Transcripción:
             }
           }
  
-          setSelectedBird(detectedBird);
+          setSelectedBirds([detectedBird]);
           setSelectedSystems(detectedSystemsList);
  
           // Re-initialize from template to ensure clean replacements
