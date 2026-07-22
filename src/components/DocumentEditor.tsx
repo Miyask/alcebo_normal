@@ -377,19 +377,27 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
       // Patch old drafts that don't have .des-plaga-block
       if (!docHtml.includes('des-plaga-block')) {
         const plagaParagraphRegex = /<p>Las estimaciones indican que una ciudad media mediterránea posee una población de más de 1500 palomas por kilómetro cuadrado[\s\S]*?aprovechar los desechos animales\.\s*<\/p>/gi;
+        const heading1Regex = /(<p[^>]*><strong>1\.-  CONTROL DE AVES URBANAS: CUÁLES Y POR QUÉ<\/strong><\/p>)/i;
         if (plagaParagraphRegex.test(docHtml)) {
           docHtml = docHtml.replace(plagaParagraphRegex, '<div class="des-plaga-block"></div>');
-        } else {
+        } else if (docHtml.includes('aprovechar los desechos animales.')) {
           docHtml = docHtml.replace(/en zonas rurales se concentran junto a explotaciones ganaderas para aprovechar los desechos animales\.\s*<\/p>/gi, 
             '<div class="des-plaga-block"></div>');
+        } else if (heading1Regex.test(docHtml)) {
+          docHtml = docHtml.replace(heading1Regex, '$1<div class="des-plaga-block"></div>');
+        } else {
+          docHtml = '<div class="des-plaga-block"></div>' + docHtml;
         }
       }
       
       // Patch old drafts that don't have .sistemas-block
       if (!docHtml.includes('sistemas-block')) {
         const systemBlockRegex = /<ul><li><strong>RED NETWORK ANTI-PALOMAS[\s\S]*?Fijación con adhesivo sellador de poliuretano de exteriores\.<\/li><\/ul>/i;
+        const heading5Regex = /(<p[^>]*><strong>5\.- PROPUESTA DE SOLUCIÓN<\/strong><\/p>)/i;
         if (systemBlockRegex.test(docHtml)) {
           docHtml = docHtml.replace(systemBlockRegex, '<div class="sistemas-block"></div>');
+        } else if (heading5Regex.test(docHtml)) {
+          docHtml = docHtml.replace(heading5Regex, '$1<div class="sistemas-block"></div>');
         } else {
           docHtml = docHtml.replace(/<p><strong>6\.- PRESUPUESTO/gi, '<div class="sistemas-block"></div><p><strong>6.- PRESUPUESTO');
         }
@@ -484,8 +492,8 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
         .replace(/\[PRECIO_3\]/g, `<span class="price-field-3">${p3_val}</span>`)
         .replace(/\[TECNICO\]/g, `<span class="tecnico-field">Técnico Oficial Alcebo</span>`)
         .replace(/\[TELEFONO\]/g, `<span class="telefono-field">900 123 456</span>`)
-        .replace(/\[DESCRIPCION_PLAGA\]/g, '')
-        .replace(/\[DESCRIPCIONES_SISTEMAS\]/g, '')
+        .replace(/\[DESCRIPCION_PLAGA\]/g, getBirdsHtml(selectedBirds))
+        .replace(/\[DESCRIPCIONES_SISTEMAS\]/g, getSystemsHtml(selectedSystems))
         .replace(/<p><strong>presupuesto<\/strong><\/p>/i, '<div class="cover-page-wrapper" style="text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 800px;"><p style="text-align: center; font-size: 24pt; margin-top: 50px;"><strong>PRESUPUESTO</strong></p>')
         .replace(/<p><strong>presupuesto<\/strong><\/p>/gi, '')
         .replace(/<p><strong>CONTENIDO<\/strong><\/p>/gi, '</div><hr class="page-break" /><p><strong>CONTENIDO</strong></p>')
@@ -564,6 +572,20 @@ export default function DocumentEditor({ quote, onSaveQuote, onCancel, templates
     if (editorRef.current) {
       if (editorRef.current.innerHTML !== editorHtml) {
         editorRef.current.innerHTML = editorHtml;
+        
+        // Populate dynamic blocks immediately on DOM injection
+        const desPlagaEl = editorRef.current.querySelector('.des-plaga-block');
+        if (desPlagaEl) {
+          desPlagaEl.innerHTML = getBirdsHtml(selectedBirds);
+        }
+        
+        const sistemasEl = editorRef.current.querySelector('.sistemas-block');
+        if (sistemasEl) {
+          sistemasEl.innerHTML = wrapImagesInEditor(getSystemsHtml(selectedSystems));
+        }
+
+        // Keep editorHtml state in sync with the populated DOM
+        setEditorHtml(editorRef.current.innerHTML);
       }
     }
   }, [editorHtml]);
@@ -2000,10 +2022,7 @@ ${fullHtml}
             <span className="material-symbols-outlined text-base text-[#009FE3]">info</span>
             <span>Puedes escribir en cualquier párrafo del documento directamente.</span>
           </div>
-          <div className="flex items-center gap-1.5 text-amber-600">
-            <span className="material-symbols-outlined text-base text-xs">warning</span>
-            <span>Tip: Para Imprimir/PDF con logotipo de fondo, activa "Gráficos de fondo".</span>
-          </div>
+
         </div>
       </div>
 
@@ -2080,20 +2099,7 @@ ${fullHtml}
               Configuración Técnica
             </h3>
             <div className="space-y-3">
-              <div>
-                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">📝 Seleccionar Plantilla Base</label>
-                <select
-                  value={selectedTemplateId}
-                  onChange={(e) => handleApplyTemplate(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-[#009FE3] transition-colors cursor-pointer mb-2"
-                >
-                  {templates.map((temp) => (
-                    <option key={temp.id} value={temp.id}>
-                      {temp.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+
 
               <div>
                 <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">📅 Fecha del Presupuesto</label>
