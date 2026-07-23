@@ -1311,7 +1311,7 @@ Transcripción:
       </head>
       <body>
         ${cleanHtmlContent}
-      </body>
+             </body>
       </html>
     `;
 
@@ -1328,7 +1328,7 @@ ${fullHtml}
 
     const blob = new Blob([mhtml], { type: 'application/msword' });
     const url = window.URL.createObjectURL(blob);
-const a = document.createElement('a');
+    const a = document.createElement('a');
     a.href = url;
     a.download = `Presupuesto_${(extractedClient || 'Alcebo').replace(/\s+/g, '_')}.doc`;
     document.body.appendChild(a);
@@ -1339,7 +1339,6 @@ const a = document.createElement('a');
     showToast('¡Word de alta fidelidad (.doc) descargado con éxito!');
   };
 
-  // Export high-fidelity DOCX using 100% client-side template-filling
   const handleExportDocx = async () => {
     if (!editorRef.current) return;
     
@@ -1390,12 +1389,19 @@ const a = document.createElement('a');
         container.setAttribute('style', 'text-align: center; margin: 20px auto; display: block; max-width: 580px;');
       });
 
-      // Replace hr.page-break with styled divs for Word page breaks
-      const pageBreaks = tempDiv.querySelectorAll('hr.page-break');
-      pageBreaks.forEach(pb => {
-        const div = document.createElement('div');
-        div.className = 'page-break';
-        pb.parentNode?.replaceChild(div, pb);
+      // Filter children to keep only from Section 1 onwards
+      let foundSec1 = false;
+      const sectionsDiv = document.createElement('div');
+      
+      Array.from(tempDiv.children).forEach(child => {
+        if (!foundSec1) {
+          if (child.textContent?.includes('1.-') || child.innerHTML.includes('1.-')) {
+            foundSec1 = true;
+          }
+        }
+        if (foundSec1) {
+          sectionsDiv.appendChild(child.cloneNode(true));
+        }
       });
 
       // 2. Load the base64 Word template using PizZip in the browser
@@ -1403,14 +1409,8 @@ const a = document.createElement('a');
       let docXml = zip.file('word/document.xml').asText();
       let relsXml = zip.file('word/_rels/document.xml.rels').asText();
 
-      // Ensure ContentTypes has jpeg, png and html
+      // Ensure ContentTypes has jpeg, png
       let contentTypesXml = zip.file('[Content_Types].xml').asText();
-      if (!contentTypesXml.includes('PartName="/word/htmlDoc.html"')) {
-        contentTypesXml = contentTypesXml.replace(
-          '</Types>',
-          '<Override PartName="/word/htmlDoc.html" ContentType="text/html"/></Types>'
-        );
-      }
       if (!contentTypesXml.includes('Extension="png"')) {
         contentTypesXml = contentTypesXml.replace(
           '</Types>',
@@ -1423,151 +1423,342 @@ const a = document.createElement('a');
           '<Default Extension="jpeg" ContentType="image/jpeg"/></Types>'
         );
       }
+      if (!contentTypesXml.includes('Extension="jpg"')) {
+        contentTypesXml = contentTypesXml.replace(
+          '</Types>',
+          '<Default Extension="jpg" ContentType="image/jpeg"/></Types>'
+        );
+      }
       zip.file('[Content_Types].xml', contentTypesXml);
 
-      // 3. Extract and write images as separate files in zip
-      const imagesInDoc = tempDiv.querySelectorAll('img');
-      let chunkImageCount = 0;
-      imagesInDoc.forEach(img => {
-        const src = img.getAttribute('src') || '';
-        if (src.startsWith('data:')) {
-          chunkImageCount++;
-          const mime = src.match(/data:([^;]+);/)?.[1] || 'image/jpeg';
-          const ext = mime.includes('png') ? 'png' : 'jpeg';
-          const base64Part = src.split(',')[1] || src;
-          const cleaned = cleanBase64(base64Part);
-          
-          const filename = `media/image_chunk_${chunkImageCount}.${ext}`;
-          zip.file(`word/${filename}`, atob(cleaned), { binary: true });
-          img.setAttribute('src', filename);
+      // Parse existing relationship IDs to guarantee unique rIds for Word 2013
+      const relIds: number[] = [];
+      const idMatchRegex = /Id="rId(\d+)"/g;
+      let rMatch: RegExpExecArray | null;
+      while ((rMatch = idMatchRegex.exec(relsXml)) !== null) {
+        relIds.push(parseInt(rMatch[1], 10));
+      }
+      let nextRelIdNum = relIds.length > 0 ? Math.max(...relIds) + 1 : 100;
+
+      // Replace metadata placeholders in the template (such as Cover Page)
+      const finalRefCode = quote.refCode || (quote.id.startsWith('q-new') ? 'Ref-ALC-' + Math.floor(Math.random() * 90000 + 10000) : quote.id);
+      const today = new Date();
+      const monthNames = [
+        'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+      ];
+      const dayStr = today.getDate().toString().padStart(2, '0');
+      const monthStr = monthNames[today.getMonth()];
+      const yearStr = today.getFullYear().toString().substring(2);
+
+      docXml = docXml
+        .replace(/\[REF_CODE\]/g, finalRefCode)
+        .replace(/\[CLIENT_NAME\]/g, clientNameInput.toUpperCase())
+        .replace(/\[CLIENT_ADDRESS\]/g, clientAddressInput)
+        .replace(/\[POSTAL_CODE\]/g, '28001')
+        .replace(/\[POSTAL_CODE_PREFIX\]/g, '280')
+        .replace(/\[ATT_NAME\]/g, 'Presidente / Administrador de Fincas')
+        .replace(/\[DAY\]/g, dayStr)
+        .replace(/\[MONTH\]/g, monthStr)
+        .replace(/\[YEAR\]/g, yearStr)
+        .replace(/\[PLAGA\]/g, selectedBird)
+        .replace(/\[PRECIO_1\]/g, quote.price1 || price1)
+        .replace(/\[PRECIO_2\]/g, quote.price2 || price2)
+        .replace(/\[PRECIO_3\]/g, quote.price3 || price3)
+        .replace(/\[TECNICO\]/g, 'Técnico Oficial Alcebo')
+        .replace(/\[TELEFONO\]/g, '900 123 456');
+
+      // 3. Local variables and drawing XML generator
+      let drawingIdCounter = 1000;
+      const createDrawingMLXml = (rId: string, widthPt: number, heightPt: number, name: string) => {
+        const docPrId = ++drawingIdCounter;
+        const cx = Math.round(widthPt * 12700);
+        const cy = Math.round(heightPt * 12700);
+        return `
+          <w:p>
+            <w:pPr><w:jc w:val="center"/></w:pPr>
+            <w:r>
+              <w:drawing>
+                <wp:inline distT="0" distB="0" distL="0" distR="0" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+                  <wp:extent cx="${cx}" cy="${cy}"/>
+                  <wp:effectExtent l="0" t="0" r="0" b="0"/>
+                  <wp:docPr id="${docPrId}" name="${name}"/>
+                  <wp:cNvGraphicFramePr>
+                    <a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/>
+                  </wp:cNvGraphicFramePr>
+                  <a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+                    <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                      <pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                        <pic:nvPicPr>
+                          <pic:cNvPr id="${docPrId}" name="${name}"/>
+                          <pic:cNvPicPr/>
+                        </pic:nvPicPr>
+                        <pic:blipFill>
+                          <a:blip r:embed="${rId}"/>
+                          <a:stretch>
+                            <a:fillRect/>
+                          </a:stretch>
+                        </pic:blipFill>
+                        <pic:spPr>
+                          <a:xfrm>
+                            <a:off x="0" y="0"/>
+                            <a:ext cx="${cx}" cy="${cy}"/>
+                          </a:xfrm>
+                          <a:prstGeom prst="rect">
+                            <a:avLst/>
+                          </a:prstGeom>
+                        </pic:spPr>
+                      </pic:pic>
+                    </a:graphicData>
+                  </a:graphic>
+                </wp:inline>
+              </w:drawing>
+            </w:r>
+          </w:p>
+        `;
+      };
+
+      // Recursive DOM node to Word XML translator
+      const translateNodeToWordXML = (node: Node): string => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = node.textContent || '';
+          if (!text.trim() && text.includes('\n')) return '';
+          const escapedText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          return `<w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr><w:t xml:space="preserve">${escapedText}</w:t></w:r>`;
         }
+        
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const el = node as HTMLElement;
+          const tagName = el.tagName.toLowerCase();
+          
+          if (tagName === 'strong' || tagName === 'b') {
+            return `<w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:b/></w:rPr><w:t xml:space="preserve">${el.textContent || ''}</w:t></w:r>`;
+          }
+          if (tagName === 'em' || tagName === 'i') {
+            return `<w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:i/></w:rPr><w:t xml:space="preserve">${el.textContent || ''}</w:t></w:r>`;
+          }
+          if (tagName === 'u') {
+            return `<w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:u w:val="single"/></w:rPr><w:t xml:space="preserve">${el.textContent || ''}</w:t></w:r>`;
+          }
+          if (tagName === 'span') {
+            const hasBold = el.style.fontWeight === 'bold' || el.classList.contains('font-bold');
+            return `<w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/>${hasBold ? '<w:b/>' : ''}</w:rPr><w:t xml:space="preserve">${el.textContent || ''}</w:t></w:r>`;
+          }
+          if (tagName === 'br') {
+            return '<w:r><w:br/></w:r>';
+          }
+          
+          if (tagName === 'p') {
+            const img = el.querySelector('img');
+            if (img) {
+              return translateNodeToWordXML(img);
+            }
+            
+            let childXml = '';
+            el.childNodes.forEach(child => {
+              childXml += translateNodeToWordXML(child);
+            });
+            
+            return `<w:p>
+              <w:pPr>
+                <w:jc w:val="both"/>
+                <w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr>
+              </w:pPr>
+              ${childXml}
+            </w:p>`;
+          }
+
+          if (tagName === 'h1' || tagName === 'h2' || tagName === 'h3' || tagName === 'h4') {
+            const sz = tagName === 'h1' ? '32' : tagName === 'h2' ? '28' : '24';
+            return `<w:p>
+              <w:pPr>
+                <w:rPr>
+                  <w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/>
+                  <w:b/>
+                  <w:color w:val="009FE3"/>
+                  <w:sz w:val="${sz}"/>
+                </w:rPr>
+              </w:pPr>
+              <w:r>
+                <w:rPr>
+                  <w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/>
+                  <w:b/>
+                  <w:color w:val="009FE3"/>
+                  <w:sz w:val="${sz}"/>
+                </w:rPr>
+                <w:t>${el.textContent || ''}</w:t>
+              </w:r>
+            </w:p>`;
+          }
+
+          if (tagName === 'ul' || tagName === 'ol') {
+            let listXml = '';
+            el.querySelectorAll('li').forEach(li => {
+              let liChildXml = '';
+              li.childNodes.forEach(c => {
+                liChildXml += translateNodeToWordXML(c);
+              });
+              listXml += `<w:p>
+                <w:pPr>
+                  <w:pStyle w:val="ListParagraph"/>
+                  <w:numPr>
+                    <w:ilvl w:val="0"/>
+                    <w:numId w:val="17"/>
+                  </w:numPr>
+                  <w:jc w:val="both"/>
+                  <w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr>
+                </w:pPr>
+                ${liChildXml}
+              </w:p>`;
+            });
+            return listXml;
+          }
+
+          if (tagName === 'table') {
+            let tblXml = `<w:tbl>
+              <w:tblPr>
+                <w:tblStyle w:val="TableGrid"/>
+                <w:tblW w:w="5000" w:type="pct"/>
+                <w:tblBorders>
+                  <w:top w:val="single" w:sz="4" w:space="0" w:color="BEC8D2"/>
+                  <w:left w:val="single" w:sz="4" w:space="0" w:color="BEC8D2"/>
+                  <w:bottom w:val="single" w:sz="4" w:space="0" w:color="BEC8D2"/>
+                  <w:right w:val="single" w:sz="4" w:space="0" w:color="BEC8D2"/>
+                  <w:insideH w:val="single" w:sz="4" w:space="0" w:color="BEC8D2"/>
+                  <w:insideV w:val="single" w:sz="4" w:space="0" w:color="BEC8D2"/>
+                </w:tblBorders>
+              </w:tblPr>`;
+            
+            el.querySelectorAll('tr').forEach(tr => {
+              tblXml += `<w:tr>`;
+              tr.querySelectorAll('th, td').forEach(cell => {
+                const isTh = cell.tagName.toLowerCase() === 'th';
+                let cellChildXml = '';
+                cell.childNodes.forEach(c => {
+                  cellChildXml += translateNodeToWordXML(c);
+                });
+                
+                if (!cellChildXml.includes('<w:p>')) {
+                  cellChildXml = `<w:p>
+                    <w:pPr>
+                      <w:jc w:val="${isTh ? 'center' : 'left'}"/>
+                      <w:rPr>
+                        <w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/>
+                        ${isTh ? '<w:b/><w:color w:val="FFFFFF"/>' : ''}
+                      </w:rPr>
+                    </w:pPr>
+                    ${cellChildXml}
+                  </w:p>`;
+                }
+                
+                tblXml += `<w:tc>
+                  <w:tcPr>
+                    <w:tcW w:w="0" w:type="auto"/>
+                    ${isTh ? '<w:shd w:fill="009FE3" w:val="clear"/>' : ''}
+                    <w:tcMar>
+                      <w:top w:w="120" w:type="dxa"/>
+                      <w:bottom w:w="120" w:type="dxa"/>
+                      <w:left w:w="120" w:type="dxa"/>
+                      <w:right w:w="120" w:type="dxa"/>
+                    </w:tcMar>
+                  </w:tcPr>
+                  ${cellChildXml}
+                </w:tc>`;
+              });
+              tblXml += `</w:tr>`;
+            });
+            
+            tblXml += `</w:tbl>`;
+            return tblXml;
+          }
+
+          if (tagName === 'img') {
+            const src = el.getAttribute('src') || '';
+            if (src.startsWith('data:')) {
+              const bRelId = `rId${nextRelIdNum++}`;
+              const mime = src.match(/data:([^;]+);/)?.[1] || 'image/jpeg';
+              const ext = mime.includes('png') ? 'png' : 'jpeg';
+              const base64Part = src.split(',')[1] || src;
+              const cleaned = cleanBase64(base64Part);
+              
+              const bTargetPath = `media/visit_photo_${nextRelIdNum}.${ext}`;
+              zip.file(`word/${bTargetPath}`, atob(cleaned), { binary: true });
+              
+              relsXml = relsXml.replace(
+                '</Relationships>',
+                `<Relationship Id="${bRelId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${bTargetPath}"/></Relationships>`
+              );
+              
+              let pxWidth = 280;
+              const styleWidth = el.style.width || el.getAttribute('width');
+              if (styleWidth) {
+                const parsed = parseInt(styleWidth);
+                if (!isNaN(parsed)) pxWidth = parsed;
+              }
+              let aspectRatio = 0.75;
+              const naturalWidth = (el as HTMLImageElement).naturalWidth;
+              const naturalHeight = (el as HTMLImageElement).naturalHeight;
+              if (naturalWidth && naturalHeight && naturalWidth > 0) {
+                aspectRatio = naturalHeight / naturalWidth;
+              }
+              const widthPt = pxWidth * 0.75;
+              const heightPt = widthPt * aspectRatio;
+              
+              return createDrawingMLXml(bRelId, widthPt, heightPt, 'Imagen');
+            }
+            return '';
+          }
+
+          if (tagName === 'hr' && el.classList.contains('page-break')) {
+            return `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+          }
+          
+          let childXml = '';
+          el.childNodes.forEach(child => {
+            childXml += translateNodeToWordXML(child);
+          });
+          return childXml;
+        }
+        return '';
+      };
+
+      // 4. Translate sections HTML from Section 1 onwards
+      let translatedXML = '';
+      sectionsDiv.childNodes.forEach(child => {
+        translatedXML += translateNodeToWordXML(child);
       });
 
-      // 4. Build final HTML Doc
-      const htmlBody = tempDiv.innerHTML;
-      const htmlDoc = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-  body {
-    font-family: 'Calibri', 'Arial', sans-serif;
-    font-size: 11pt;
-    line-height: 1.5;
-    color: #333333;
-  }
-  p {
-    margin-top: 0 !important;
-    margin-bottom: 12pt !important;
-    text-align: justify !important;
-    line-height: 1.6 !important;
-    font-size: 11pt !important;
-    color: #333333 !important;
-  }
-  h1, h2, h3, h4 {
-    color: #009FE3 !important;
-    font-weight: bold !important;
-    margin-top: 18pt !important;
-    margin-bottom: 8pt !important;
-  }
-  h1 { font-size: 16pt !important; }
-  h2 { font-size: 14pt !important; }
-  h3 { font-size: 12.5pt !important; }
-  table {
-    width: 100% !important;
-    border-collapse: collapse !important;
-    margin-top: 14pt !important;
-    margin-bottom: 14pt !important;
-  }
-  th, td {
-    border: 1px solid #bec8d2 !important;
-    padding: 8px !important;
-    font-size: 10.5pt !important;
-  }
-  th {
-    background-color: #009FE3 !important;
-    color: #ffffff !important;
-    font-weight: bold !important;
-  }
-  ul {
-    list-style-type: disc !important;
-    margin-left: 24px !important;
-    margin-bottom: 12px !important;
-  }
-  ol {
-    list-style-type: decimal !important;
-    margin-left: 24px !important;
-    margin-bottom: 12px !important;
-  }
-  .page-break {
-    page-break-before: always !important;
-    break-before: page !important;
-    clear: both !important;
-  }
-  .image-container-block {
-    text-align: center !important;
-    margin: 20px auto !important;
-    display: block !important;
-    max-width: 580px !important;
-  }
-  .document-image {
-    max-width: 100% !important;
-    height: auto !important;
-    border: 1px solid #bec8d2 !important;
-    border-radius: 8px !important;
-  }
-  .client-name-field, .client-address-field, .postal-code-field, .postal-code-prefix-field,
-  .att-name-field, .ref-code-field, .plaga-field, .zonas-afectadas-field,
-  .tecnico-field, .telefono-field, .price-field-1, .price-field-2, .price-field-3,
-  .day-field, .month-field, .year-field, .transcription-field,
-  .problema-principal-field, .detalle-adicional-field {
-    background-color: transparent !important;
-    border-bottom: none !important;
-    padding: 0 !important;
-  }
-  .cover-page-wrapper p {
-    text-align: center !important;
-  }
-</style>
-</head>
-<body>
-  ${htmlBody}
-</body>
-</html>`;
+      // 5. Replace template XML body sections with translated XML
+      const sec1Index = docXml.indexOf('1.-');
+      if (sec1Index === -1) {
+        throw new Error('No se encontró el ancla de la Sección 1 en la plantilla base.');
+      }
+      const lastParaStart = docXml.lastIndexOf('<w:p', sec1Index);
+      if (lastParaStart === -1) {
+        throw new Error('No se encontró el inicio de párrafo de la Sección 1.');
+      }
 
-      // 5. Replace document.xml body with altChunk reference and keep template's sectPr
       const sectPrMatch = docXml.match(/<w:sectPr[^>]*>[\s\S]*?<\/w:sectPr>/i);
       const sectPrXml = sectPrMatch ? sectPrMatch[0] : '';
-      
-      docXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" 
-            xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
-            xmlns:o="urn:schemas-microsoft-com:office:office" 
-            xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" 
-            xmlns:m="http://schemas.openxmlformats.org/officeDrawing/2006/math" 
-            xmlns:v="urn:schemas-microsoft-com:vml" 
-            xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" 
-            xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" 
-            xmlns:w10="urn:schemas-microsoft-com:office:word" 
-            xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" 
-            xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" 
-            xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordprocessingDoubleByte" 
-            xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" 
-            mc:Ignorable="w14 w15 wp14">
-  <w:body>
-    <w:altChunk r:id="rIdAltChunk1" />
-    ${sectPrXml}
-  </w:body>
-</w:document>`;
 
-      // 6. Update document.xml.rels with altChunk relationship
-      relsXml = relsXml.replace('</Relationships>', `<Relationship Id="rIdAltChunk1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/aFChunk" Target="htmlDoc.html"/></Relationships>`);
+      docXml = docXml.substring(0, lastParaStart) + translatedXML + sectPrXml + '</w:body></w:document>';
+
+      // Replace external network-pest.co.uk rId13 link with a 100% local offline image in header/footer relationship
+      if (IMAGE_RED_BASE64) {
+        const redData = IMAGE_RED_BASE64.split(',')[1];
+        if (redData) {
+          zip.file('word/media/image_red_local.jpeg', atob(redData), { binary: true });
+          relsXml = relsXml.replace(
+            /<Relationship[^>]*Id="rId13"[^>]*\/>/i,
+            '<Relationship Id="rId13" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image_red_local.jpeg"/>'
+          );
+        }
+      }
 
       zip.file('word/document.xml', docXml);
       zip.file('word/_rels/document.xml.rels', relsXml);
-      zip.file('word/htmlDoc.html', htmlDoc);
 
-      // 7. Generate DOCX file blob and download it
+      // 6. Generate DOCX file blob and download it
       const outBase64 = zip.generate({ type: 'base64' });
       const binaryString = atob(outBase64);
       const len = binaryString.length;
