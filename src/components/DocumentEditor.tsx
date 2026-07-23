@@ -1559,7 +1559,10 @@ ${fullHtml}
               childXml += translateNodeToWordXML(child);
             });
             
-            return `<w:p>
+            const isSectionTitle = /^\s*(1|2|3|4|5|6)\.-/i.test(el.textContent || '');
+            const prefixXml = isSectionTitle ? `<w:p><w:r><w:br w:type="page"/></w:r></w:p>` : '';
+
+            return prefixXml + `<w:p>
               <w:pPr>
                 <w:jc w:val="both"/>
                 <w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/></w:rPr>
@@ -1570,7 +1573,11 @@ ${fullHtml}
 
           if (tagName === 'h1' || tagName === 'h2' || tagName === 'h3' || tagName === 'h4') {
             const sz = tagName === 'h1' ? '32' : tagName === 'h2' ? '28' : '24';
-            return `<w:p>
+            
+            const isSectionTitle = /^\s*(1|2|3|4|5|6)\.-/i.test(el.textContent || '');
+            const prefixXml = isSectionTitle ? `<w:p><w:r><w:br w:type="page"/></w:r></w:p>` : '';
+
+            return prefixXml + `<w:p>
               <w:pPr>
                 <w:rPr>
                   <w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/>
@@ -1721,6 +1728,9 @@ ${fullHtml}
         }
         return '';
       };
+
+      // Remove all hr.page-break elements from sectionsDiv first to prevent duplicate page breaks
+      sectionsDiv.querySelectorAll('hr.page-break').forEach(el => el.remove());
 
       // 4. Translate sections HTML from Section 1 onwards
       let translatedXML = '';
