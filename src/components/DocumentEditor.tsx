@@ -1697,18 +1697,38 @@ ${fullHtml}
               );
               
               let pxWidth = 280;
-              const styleWidth = el.style.width || el.getAttribute('width');
-              if (styleWidth) {
+              const styleWidth = el.style.width || el.getAttribute('width') || '';
+              if (styleWidth && !styleWidth.includes('%')) {
                 const parsed = parseInt(styleWidth);
-                if (!isNaN(parsed)) pxWidth = parsed;
+                if (!isNaN(parsed) && parsed > 0) pxWidth = parsed;
               }
+              
+              let widthPt = pxWidth * 0.75;
+              if (widthPt > 320) {
+                widthPt = 320;
+              }
+              if (widthPt < 80) {
+                widthPt = 240;
+              }
+
               let aspectRatio = 0.75;
-              const naturalWidth = (el as HTMLImageElement).naturalWidth;
-              const naturalHeight = (el as HTMLImageElement).naturalHeight;
+              const imgEl = el as HTMLImageElement;
+              const naturalWidth = imgEl.naturalWidth;
+              const naturalHeight = imgEl.naturalHeight;
               if (naturalWidth && naturalHeight && naturalWidth > 0) {
                 aspectRatio = naturalHeight / naturalWidth;
+              } else {
+                const attrHeight = el.getAttribute('height');
+                const attrWidth = el.getAttribute('width');
+                if (attrHeight && attrWidth) {
+                  const h = parseInt(attrHeight);
+                  const w = parseInt(attrWidth);
+                  if (w > 0 && h > 0) aspectRatio = h / w;
+                }
               }
-              const widthPt = pxWidth * 0.75;
+              if (aspectRatio > 1.5) aspectRatio = 1.5;
+              if (aspectRatio < 0.3) aspectRatio = 0.3;
+
               const heightPt = widthPt * aspectRatio;
               
               return createDrawingMLXml(bRelId, widthPt, heightPt, 'Imagen');
